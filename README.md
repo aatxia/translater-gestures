@@ -71,8 +71,8 @@ Frontend буде доступний на `http://localhost:3000`.
 | # | Фаза | Статус |
 |---|------|--------|
 | 1 | Repository + architecture | ✅ Done |
-| 2 | Backend FastAPI | ⏳ Next |
-| 3 | Frontend Next.js | ⏳ |
+| 2 | Backend FastAPI | ✅ Done |
+| 3 | Frontend Next.js | ⏳ Next |
 | 4 | Camera | ⏳ |
 | 5 | WebSocket | ⏳ |
 | 6 | MediaPipe preprocessing | ⏳ |

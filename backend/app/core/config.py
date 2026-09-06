@@ -1,0 +1,72 @@
+"""
+Centralized application configuration.
+
+All tunable parameters are read from environment variables (see /.env.example
+at the repo root). Nothing here is hardcoded — this is the single source of
+truth the rest of the backend imports from.
+"""
+from __future__ import annotations
+
+from functools import lru_cache
+from pathlib import Path
+
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Repo root is three levels up from this file: backend/app/core/config.py -> repo root
+REPO_ROOT = Path(__file__).resolve().parents[3]
+
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=str(REPO_ROOT / ".env"),
+        env_file_encoding="utf-8",
+        extra="ignore",
+        protected_namespaces=("settings_",),
+    )
+
+    # --- App ---
+    app_env: str = "development"
+    log_level: str = "INFO"
+
+    # --- Backend ---
+    backend_host: str = "0.0.0.0"
+    backend_port: int = 8000
+    cors_origins: str = "http://localhost:3000"
+
+    # --- WebSocket ---
+    ws_max_message_size_bytes: int = 2_097_152
+    ws_max_fps: int = 15
+    ws_heartbeat_interval_sec: int = 30
+
+    # --- ML model ---
+    model_type: str = "lstm"
+    model_checkpoint_path: str = "models/checkpoints/baseline/latest.pt"
+    model_sequence_length: int = 32
+    model_device: str = "cpu"
+
+    # --- Feature toggles ---
+    features_hands: bool = True
+    features_pose: bool = True
+    features_face: bool = True
+
+    # --- NLP ---
+    nlp_backend: str = "rule_based"
+    nlp_hf_model_name: str = ""
+
+    # --- TTS / STT ---
+    tts_provider: str = "browser"
+    stt_provider: str = "browser"
+
+    # --- Privacy ---
+    store_raw_video: bool = False
+    send_video_to_third_party: bool = False
+
+    @property
+    def cors_origins_list(self) -> list[str]:
+        return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
+
+
+@lru_cache
+def get_settings() -> Settings:
+    """Settings are cached; call get_settings() rather than instantiating Settings() directly."""
+    return Settings()

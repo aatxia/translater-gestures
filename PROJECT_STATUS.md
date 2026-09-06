@@ -1,6 +1,6 @@
 # PROJECT STATUS
 
-Останнє оновлення: Phase 1 complete.
+Останнє оновлення: Phase 2 complete.
 
 ## Що вже є
 
@@ -50,9 +50,36 @@
 | PyTorch | не встановлений локально (буде встановлено в Phase 6/9 разом з ml/requirements.txt) |
 | Docker | відсутній у поточному sandbox; Dockerfile'и готуються заздалегідь для локальної машини користувача |
 
+## PHASE 2 — Backend FastAPI (COMPLETE)
+
+Створено робочий FastAPI застосунок:
+
+- `backend/app/main.py` — FastAPI app, CORS, lifespan logging, router registration.
+- `backend/app/core/config.py` — Pydantic Settings, читає `.env`, нічого не захардкожено.
+- `backend/app/core/logging.py` — structured logging; за дизайном ЗАБОРОНЕНО логувати сирі
+  відео/фрейми (тільки метадані: FPS, latency, confidence, connection events, errors).
+- `backend/app/api/routes/health.py` + `backend/app/schemas/health.py` — `/health` endpoint,
+  чесно повертає `ml_pipeline_status: "not_implemented"` (жодної фейкової готовності).
+- `backend/app/services/{inference,translation,speech,avatar}_service.py` — абстрактні
+  інтерфейси (`InferenceService`, `TranslationService`, `TextToSpeech`, `SpeechRecognizer`,
+  `AvatarService`) для майбутньої взаємозамінності реалізацій. Кожен має
+  "NotConfigured"-реалізацію, яка **явно кидає типізовану помилку** замість фейкового
+  результату — відповідно до правила "НЕ РОБИ FAKE AI".
+- `backend/tests/test_health.py`, `backend/tests/test_services_honesty.py` — 7 тестів,
+  включно з перевіркою, що сервіси чесно відмовляють у роботі, поки немає реального ML/NLP.
+- `docker/backend.Dockerfile`.
+
+**Перевірено наживо:**
+- `pytest`: 7 passed, 0 failed, 0 warnings.
+- `ruff check`: All checks passed.
+- Сервер піднятий (`uvicorn app.main:app`), `GET /health` → `200 OK` з коректним JSON,
+  `GET /docs` (OpenAPI) → `200 OK`.
+
+**Known limitations:** `/health` навмисно показує `ml_pipeline_status: not_implemented` —
+це очікувано і буде змінено на `demo_mode`/`ready` у Phase 9-10.
+
 ## Наступна фаза
 
-**PHASE 2 — Backend FastAPI**: мінімальний застосунок, що піднімається командою
-`uvicorn app.main:app --reload`, з health-check endpoint і структурою під подальші сервіси
-(`inference_service`, `translation_service`, `speech_service`, `avatar_service`) — поки як чіткі
-інтерфейси, без fake-логіки там, де реальна реалізація ще неможлива без CV/ML pipeline.
+**PHASE 3 — Frontend Next.js**: базовий застосунок з layout, порожньою `/translator` сторінкою,
+TypeScript strict mode, Tailwind, і першим API-викликом до `/health` для перевірки
+frontend↔backend зв'язку (CORS вже налаштовано в Phase 2).
