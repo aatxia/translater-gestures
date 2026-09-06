@@ -1,0 +1,43 @@
+# --- Python / Backend / ML ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# --- Node / Frontend ---
+node_modules/
+.next/
+out/
+.turbo/
+npm-debug.log*
+
+# --- Env / secrets ---
+.env
+.env.local
+*.local
+
+# --- ML artifacts (large binary, do not commit) ---
+data/raw/*
+!data/raw/.gitkeep
+data/processed/*
+!data/processed/.gitkeep
+models/checkpoints/*
+!models/checkpoints/.gitkeep
+experiments/*/
+*.pt
+*.pth
+*.onnx
+*.ckpt
+*.safetensors
+
+# --- OS / editor ---
+.DS_Store
+.vscode/
+.idea/
+
+# --- Docker ---
+docker-compose.override.yml
