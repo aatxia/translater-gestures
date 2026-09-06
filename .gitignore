@@ -1,44 +1,44 @@
-# --- Python / Backend / ML ---
-__pycache__/
-*.py[cod]
-*.egg-info/
-.venv/
-venv/
-.pytest_cache/
-.ruff_cache/
-.mypy_cache/
 
-# --- Node / Frontend ---
-node_modules/
-.next/
-out/
-.turbo/
-npm-debug.log*
-
-# --- Env / secrets ---
-.env
-.env.local
-*.local
-
-# --- ML artifacts (large binary, do not commit) ---
-data/raw/*
-!data/raw/.gitkeep
-data/processed/*
 !data/processed/.gitkeep
-models/checkpoints/*
+!data/raw/.gitkeep
 !models/checkpoints/.gitkeep
-experiments/*/
+# --- Docker ---
+# --- Env / secrets ---
+# --- ML artifacts (large binary, do not commit) ---
+# --- Node / Frontend ---
+# --- OS / editor ---
+# --- Python / Backend / ML ---
+*.ckpt
+*.egg-info/
+*.local
+*.onnx
 *.pt
 *.pth
-*.onnx
-*.ckpt
+*.py[cod]
 *.safetensors
-
-# --- OS / editor ---
 .DS_Store
-.vscode/
+.env
+.env.local
 .idea/
-
-# --- Docker ---
-docker-compose.override.yml
+.mypy_cache/
+.next/
+.pytest_cache/
+.ruff_cache/
+.turbo/
+.venv/
+.vscode/
+__pycache__/
 backend/.venv/
+data/processed/*
+data/raw/*
+docker-compose.override.yml
+experiments/*/
+frontend/.next/
+frontend/node_modules/
+models/checkpoints/*
+node_modules/
+npm-debug.log*
+out/
+venv/
+*.tsbuildinfo
+frontend/next-env.d.ts

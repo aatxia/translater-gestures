@@ -1,6 +1,6 @@
 # PROJECT STATUS
 
-Останнє оновлення: Phase 2 complete.
+Останнє оновлення: Phase 3 complete.
 
 ## Що вже є
 
@@ -78,8 +78,34 @@
 **Known limitations:** `/health` навмисно показує `ml_pipeline_status: not_implemented` —
 це очікувано і буде змінено на `demo_mode`/`ready` у Phase 9-10.
 
+## PHASE 3 — Frontend Next.js (COMPLETE)
+
+Створено робочий Next.js застосунок (App Router, TypeScript strict, Tailwind):
+
+- `app/layout.tsx` — shared header/nav, `app/page.tsx` — головна, `app/translator/page.tsx` —
+  каркас екрану перекладача (камера / переклад / текст→жести / avatar блоки, кожен чітко
+  позначений, у якій фазі буде підключений — без фейкової функціональності).
+- `components/ConnectionStatus/` — живий health-check до backend `/health` кожні 5с, з тестами
+  (успіх/недоступність backend), 2/2 passed.
+- `lib/api.ts`, `types/api.ts` — типізований API-клієнт; `ServerMessage`/`FrameMessage` типи для
+  WebSocket protocol вже описані наперед (Phase 5 їх використає, single source of truth).
+- `docker/frontend.Dockerfile`.
+
+**Перевірено наживо:**
+- `tsc --noEmit`: 0 помилок.
+- `eslint`: 0 помилок, 0 warnings (виправлено конфлікт `eslint-config-next` 16.x з flat-config —
+  прибрано застарілий `FlatCompat`, `<a>` замінено на `next/link`).
+- `vitest run`: 2 passed.
+- `next build`: успішний production build (`/`, `/translator`, `/_not-found` — усі static).
+- **E2E наживо**: backend (`uvicorn`, порт 8000) + frontend (`next dev`, порт 3000) підняті
+  одночасно, `/` і `/translator` віддають `200 OK`, ConnectionStatus реально показує
+  `Connected · model: lstm · ML pipeline: not_implemented` через живий `/health` запит.
+
+**Known limitations:** камера, WebSocket-стрім, розпізнавання, avatar — усі UI-блоки для них
+є, але позначені як "буде підключено в Phase N" (не приховано, чітко видно користувачу).
+
 ## Наступна фаза
 
-**PHASE 3 — Frontend Next.js**: базовий застосунок з layout, порожньою `/translator` сторінкою,
-TypeScript strict mode, Tailwind, і першим API-викликом до `/health` для перевірки
-frontend↔backend зв'язку (CORS вже налаштовано в Phase 2).
+**PHASE 4 — Camera**: `useCamera` hook (getUserMedia, preview, start/stop, permission/error
+handling, configurable FPS 10-15 та роздільна здатність 640x480), підключений до
+`components/Camera/` на сторінці `/translator` замість поточного плейсхолдера.
