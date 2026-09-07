@@ -1,6 +1,8 @@
 
 !data/processed/.gitkeep
 !data/raw/.gitkeep
+!data/annotations/.gitkeep
+!data/splits/.gitkeep
 !models/checkpoints/.gitkeep
 # --- Docker ---
 # --- Env / secrets ---
@@ -32,6 +34,8 @@ __pycache__/
 backend/.venv/
 data/processed/*
 data/raw/*
+data/annotations/*
+data/splits/*
 docker-compose.override.yml
 experiments/*/
 frontend/.next/

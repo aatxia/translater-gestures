@@ -88,8 +88,33 @@ Tests that need a real model file (`test_landmarks.py`) skip automatically
 with a clear reason if you haven't run the download script yet — they are
 not faked or hardcoded to pass.
 
-## Dataset / training / inference
+## Dataset pipeline (Phase 8)
+
+```
+ml/datasets/
+├── annotation.py        # SampleAnnotation schema + honest JSONL load/write
+├── split.py              # signer-independent train/val/test split (section 11)
+├── synthetic.py          # DEMO MODE ONLY: synthetic dataset generator
+└── dataset.py             # loads a sample's feature-vector sequence off disk
+```
+
+No public isolated-sign УЖМ (Ukrainian Sign Language) dataset with
+`signer_id` labeling could be found (see `PROJECT_STATUS.md`, Phase 8, for
+what was checked). Until a real one is available, `scripts/generate_demo_dataset.py`
+produces a small synthetic dataset (`source="demo_synthetic"`, never to be
+mistaken for real data) so the rest of the pipeline can be exercised
+end-to-end:
+
+```bash
+python scripts/generate_demo_dataset.py --output-dir data --seed 42
+python scripts/create_dataset_split.py \
+  --annotations data/annotations/demo_annotations.jsonl \
+  --output-dir data/splits
+```
+
+Full format details: `docs/dataset_format.md`.
+
+## Training / inference
 
 Not implemented yet — see `PROJECT_STATUS.md` for the phase plan
-(Phase 8: dataset pipeline, Phase 9: baseline model training,
-Phase 10: real-time inference).
+(Phase 9: baseline model training, Phase 10: real-time inference).

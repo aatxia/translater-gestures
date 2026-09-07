@@ -1,6 +1,6 @@
 # PROJECT STATUS
 
-Останнє оновлення: Phase 7 complete.
+Останнє оновлення: Phase 8 complete.
 
 ## Що вже є
 
@@ -249,11 +249,66 @@ Feature-вектори та повне підключення реального
 `scripts/download_mediapipe_models.sh` (де офіційний URL не заблокований) все запрацює з усіма
 трьома модальностями без додаткових змін.
 
+## PHASE 8 — Dataset pipeline (COMPLETE)
+
+**Дослідження реального датасету УЖМ (перед кодом, як і планувалось):** перевірено три основні
+реєстри sign-language датасетів — `sign-language-processing/datasets` (HuggingFace/TFDS),
+PyPI `sign-language-datasets`, `SignLanguage-Dataset-Hub` — **жоден не містить УЖМ**. Знайдено
+один реальний, свіжий (травень 2026) ресурс — **UkrSL** ("Towards a Ukrainian Continuous Sign
+Language Dataset", UNLP 2026, Sobetskyi/Kosse/Kyslyi/Savchenko): 1456 кліпів (~2 години) з 6
+відео Суспільного мовлення. Але це **continuous signing**, вирівняний до українського тексту
+переклад дикторської мови (не ізольовані жести з gloss-міткою для класифікації), сигнерів
+ймовірно лише кілька (перекладачі каналу) — не той рівень signer-різноманіття, що потрібен для
+signer-independent split. Посилання на завантаження/ліцензію **не вдалось перевірити** —
+`aclanthology.org` заблокований мережевою політикою цього sandbox-середовища. Висновок:
+готового isolated-sign датасету УЖМ з `signer_id` для класифікації публічно не існує — це
+підтверджена відсутність ресурсу, а не пропущений пошук.
+
+Створено інфраструктуру датасету (`ml/datasets/`, `scripts/`, `docs/dataset_format.md`):
+
+- `ml/datasets/annotation.py` — `SampleAnnotation` (sample_id/clip_path/signer_id/gloss/
+  start_frame/end_frame/fps/source, розділ 10), JSONL load/write з чіткими помилками (файл +
+  рядок) на некоректний рядок або дублікат `sample_id` — жоден поганий рядок не пропускається
+  мовчки.
+- `ml/datasets/split.py` — `signer_independent_split()` (розділ 11): призначає **цілого
+  сигнера**, а не окремий семпл, в один зі spliits (greedy group-balancing за ratio,
+  детерміновано за `seed`); кидає явну помилку, якщо унікальних сигнерів менше, ніж потрібно
+  спліттів, замість мовчазного порожнього спліту.
+- `scripts/create_dataset_split.py` — CLI, пише `data/splits/{train,val,test}.txt` +
+  `split_manifest.json` (ratio/seed/signer→split, для аудиту).
+- `ml/datasets/synthetic.py` (**DEMO MODE ONLY**) — генерує невеликий повністю штучний датасет
+  (6 фейкових сигнерів × 5 gloss-міток), псевдовипадкові feature-послідовності з
+  класо-залежним зсувом (НЕ з реального відео/MediaPipe), кожен семпл позначений
+  `source="demo_synthetic"`.
+- `ml/datasets/dataset.py::load_feature_sequence()` — завантажує `.npy` для
+  `source="demo_synthetic"`; для будь-якого іншого `source` **явно кидає
+  `NotImplementedError`** (реальні відео поки нема як декодувати — Phase 9 підключить
+  `ml/preprocessing`+`ml/features` до цього шляху, коли з'явиться реальний датасет) — жодної
+  фейкової підтримки.
+- `scripts/generate_demo_dataset.py` — CLI-обгортка, друкує явне попередження
+  "[DEMO MODE] ... This is NOT real Ukrainian Sign Language data".
+- `docs/dataset_format.md` — повний опис формату анотацій, signer-independent split, і чому
+  зараз лише DEMO MODE.
+- `.gitignore` — `data/annotations/*` і `data/splits/*` тепер ігноруються (як і
+  `data/raw`/`data/processed`): вміст завжди або згенерований локально, або з зовнішнього
+  датасету, і не повинен коммітитись як частина репозиторію.
+
+**Перевірено наживо:**
+- `pytest` (`ml/`): 54 passed, 4 skipped (ті самі pose-skip з Phase 6, з задокументованої
+  причини — не пов'язано з Phase 8).
+- Живий E2E через CLI: `generate_demo_dataset.py` → 90 семплів (6 сигнерів × 5 gloss × 3 takes),
+  `create_dataset_split.py` на них → `train: 60 (4 сигнери), val: 15 (1 сигнер), test: 15
+  (1 сигнер)` — рівно 0.7/0.15/0.15 при 6 рівних сигнерах, жоден сигнер не перетнув спліти.
+
+**Known limitations:** synthetic-датасет існує лише для перевірки інфраструктури — модель,
+натренована на ньому, не розпізнає жодного реального жесту УЖМ. Реальний датасет лишається
+зовнішньою залежністю; `load_feature_sequence()` для реального відео свідомо не реалізовано
+(Phase 9).
+
 ## Наступна фаза
 
-**PHASE 8 — Dataset pipeline**: `data/{raw,processed,annotations,splits}/`, `scripts/
-create_dataset_split.py` (signer-independent train/val/test split, розділ 11 ТЗ — суворо
-заборонено, щоб один signer_id був і в train, і в test), формат анотацій (розділ 10). Це
-зовнішня залежність — потрібен реальний відеодатасет УЖМ з розміткою signer_id, якого поки
-немає; buде створено інфраструктуру + synthetic/debug dataset лише для перевірки pipeline,
-чітко позначений як DEMO MODE (розділ 40 ТЗ), doки реальний датасет не з'явиться.
+**PHASE 9 — Baseline model training**: `ml/training/train.py` (модель LSTM/GRU за
+`configs/model.yaml`, тренувальний цикл, checkpoint save/load), запускний і локально, і в
+Google Colab (GPU) без Colab-специфічних хаків — тренування на `demo_synthetic` датасеті як
+sanity-check pipeline'а, з чітким DEMO MODE попередженням у логах/checkpoint metadata; реальне
+тренування на УЖМ можливе лише після появи реального датасету.
