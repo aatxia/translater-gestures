@@ -19,3 +19,13 @@ features:
   hands: true
   pose: true
   face: true
+
+# Phase 9: ml/training/train.py reads these as defaults; CLI flags
+# (--epochs, --hidden-size, ...) override them per-run without editing
+# this file (see ml/training/config.py).
+training:
+  hidden_size: 128
+  num_layers: 2
+  epochs: 20
+  batch_size: 16
+  learning_rate: 0.001

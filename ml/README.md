@@ -114,7 +114,53 @@ python scripts/create_dataset_split.py \
 
 Full format details: `docs/dataset_format.md`.
 
-## Training / inference
+## Training (Phase 9)
+
+```
+ml/models/
+└── lstm.py              # LSTMSignClassifier: stacked LSTM + linear classifier head
+
+ml/training/
+├── config.py             # loads configs/model.yaml -> TrainingConfig
+├── dataset.py             # SignSequenceDataset: SampleAnnotation -> fixed-length tensor
+└── train.py               # CLI: split -> train -> evaluate -> save checkpoint
+```
+
+Install torch first (see `ml/requirements-training.txt` — **read its header
+before running pip install in Google Colab**, since Colab already has a
+GPU-matched torch preinstalled). Then, from the repo root:
+
+```bash
+pip install -r ml/requirements-training.txt   # local only, see note above for Colab
+python scripts/generate_demo_dataset.py --output-dir data --seed 42   # if you haven't already
+python -m ml.training.train --annotations data/annotations/demo_annotations.jsonl
+```
+
+Runs identically locally and in Colab (`!python -m ml.training.train ...`
+after cloning the repo there) — no Colab-specific paths or hacks. Hyperparameters
+(hidden size, epochs, batch size, learning rate) default to `configs/model.yaml`'s
+`training:` section and can be overridden per-run with CLI flags (`--epochs`,
+`--hidden-size`, ...) without editing the file.
+
+Training does a signer-independent split (`ml/datasets/split.py`, section 11)
+of whatever annotation file you point it at, trains on `train`, evaluates on
+`val` each epoch, and saves the best checkpoint to
+`models/checkpoints/<experiment-name>/latest.pt` (gitignored — a checkpoint is
+a build artifact, not source). The checkpoint carries everything Phase 10
+inference needs: model weights, architecture config, feature config, sequence
+length, and the gloss↔index label mapping — plus `source_tags` and `demo_mode`,
+so a checkpoint trained only on `demo_synthetic` data can never be silently
+mistaken for one that recognizes real Ukrainian Sign Language.
+
+**Running on the demo dataset is a pipeline sanity check, not a real model**:
+since the synthetic classes are trivially separable by construction, val
+accuracy reaches 100% in a few epochs — that only proves training/checkpoint
+plumbing works end-to-end, it says nothing about real-world recognition.
+Real training needs a real annotated УЖМ dataset (still not available as of
+Phase 9, see `PROJECT_STATUS.md`).
+
+## Inference
 
 Not implemented yet — see `PROJECT_STATUS.md` for the phase plan
-(Phase 9: baseline model training, Phase 10: real-time inference).
+(Phase 10: real-time inference, wiring a trained checkpoint into the backend's
+`InferenceService`).

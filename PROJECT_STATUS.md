@@ -1,6 +1,6 @@
 # PROJECT STATUS
 
-Останнє оновлення: Phase 8 complete.
+Останнє оновлення: Phase 9 complete.
 
 ## Що вже є
 
@@ -305,10 +305,64 @@ signer-independent split. Посилання на завантаження/лі�
 зовнішньою залежністю; `load_feature_sequence()` для реального відео свідомо не реалізовано
 (Phase 9).
 
+## PHASE 9 — Baseline model training (COMPLETE)
+
+Реалізовано повний тренувальний pipeline (`ml/models/`, `ml/training/`), однаково запускний
+локально й у Google Colab, без Colab-специфічних хаків:
+
+- `ml/models/lstm.py` — `LSTMSignClassifier`: стековий LSTM (`nn.LSTM`, `batch_first`) над
+  feature-вектором кадру (Phase 7) + лінійний класифікатор над фінальним hidden state.
+  Єдина реалізована архітектура на Phase 9 (`configs/model.yaml` лишає місце для
+  transformer/video_jepa на майбутнє — `ml/training/config.py` **явно кидає
+  `NotImplementedError`** для будь-якого нереалізованого `model.type`, а не мовчки навчає
+  щось інше).
+- `ml/training/config.py` — `load_training_config()` читає `configs/model.yaml`
+  (`model.type`/`sequence_length`, `features.*`, новий розділ `training:` з
+  hidden_size/num_layers/epochs/batch_size/learning_rate) в один `TrainingConfig` — єдине
+  джерело гіперпараметрів експерименту (розділ 31), CLI-флаги лише перевизначають конкретний
+  запуск.
+- `ml/training/dataset.py` — `SignSequenceDataset` (torch `Dataset`): бере `SampleAnnotation` +
+  `ml.datasets.dataset.load_feature_sequence()`, паддить/обрізає до фіксованої довжини
+  (`pad_or_truncate`, нулями — узгоджено з тим, як `normalize_frame()` вже позначає
+  "не виявлено").
+- `ml/training/train.py` — CLI: signer-independent split (Phase 8) на train/val/test →
+  тренувальний цикл (Adam, cross-entropy) → оцінка на val щоепохи → зберігає **найкращий**
+  checkpoint у `models/checkpoints/<experiment-name>/latest.pt` (gitignored — build artifact,
+  не вихідний код). Checkpoint містить усе, що знадобиться Phase 10 inference: ваги моделі,
+  `model_config`/`feature_config`/`sequence_length`, мапу `label_to_index`, і — критично для
+  правила "НЕ РОБИ FAKE AI" — `source_tags` + `demo_mode`, щоб checkpoint, натренований лише
+  на `demo_synthetic`, ніколи не можна було сплутати з таким, що розпізнає реальну УЖМ.
+  `test`-спліт рахується (для майбутнього `ml/evaluation/`), але цим скриптом не
+  використовується — про це чесно пишеться в консоль.
+- `ml/requirements-training.txt` — torch окремо від `ml/requirements.txt` (щоб backend/CV
+  pipeline не тягнув важку GPU/CPU-специфічну залежність); заголовок файлу explicитно
+  попереджає: **у Colab torch вже стоїть з GPU — не перевстановлювати цим файлом**, інакше
+  втратиш GPU-доступ.
+
+**Перевірено наживо:**
+- `pytest` (`ml/`): 66 passed, 4 skipped (ті самі pose-skip з Phase 6). `ruff check` — чисто.
+- **Реальний E2E через CLI** (не мок): `scripts/generate_demo_dataset.py` (180 семплів, 6
+  сигнерів × 5 gloss × 6 takes) → `python -m ml.training.train` з кореня репо → live-навчання
+  на CPU (torch 2.14, встановлено з дефолтного PyPI, бо `download.pytorch.org` заблоковано
+  мережею sandbox — на твоїй машині/в Colab звичайний `pip install torch` спрацює так само) →
+  15 епох, val_accuracy сходиться до 1.0 (очікувано: demo-класи навмисно тривіально
+  розділювані), checkpoint збережено і перевірено `torch.load()` — усі поля (`model_type`,
+  `model_config`, `feature_config`, `sequence_length`, `label_to_index`, `source_tags`,
+  `demo_mode=True`, `val_accuracy`, `trained_at`) присутні й коректні.
+
+**Known limitations:** val_accuracy=1.0 на demo-датасеті нічого не каже про реальну точність
+розпізнавання УЖМ — це навмисно тривіальні синтетичні класи, лише перевірка, що
+split→train→checkpoint pipeline коректний end-to-end. Реальне тренування чекає на реальний
+датасет (Phase 8: досі не існує публічно). `ml/evaluation/` (held-out test-спліт, метрики) — не
+в скоупі Phase 9, лишається на майбутнє.
+
 ## Наступна фаза
 
-**PHASE 9 — Baseline model training**: `ml/training/train.py` (модель LSTM/GRU за
-`configs/model.yaml`, тренувальний цикл, checkpoint save/load), запускний і локально, і в
-Google Colab (GPU) без Colab-специфічних хаків — тренування на `demo_synthetic` датасеті як
-sanity-check pipeline'а, з чітким DEMO MODE попередженням у логах/checkpoint metadata; реальне
-тренування на УЖМ можливе лише після появи реального датасету.
+**PHASE 10 — Real-time inference**: підключити збережений checkpoint (`models/checkpoints/`) у
+`backend/app/services/inference_service.py` — конкретна реалізація `InferenceService`
+(`LSTMSignRecognizer` чи подібне), яка завантажує checkpoint, тримає sliding window
+feature-векторів (`model_sequence_length` кадрів) і повертає `SignPrediction`. WebSocket handler
+(Phase 5/7) перемикається з чесної "not implemented" помилки на реальний (хай і demo-якості,
+поки нема реального датасету) prediction. `/health` `ml_pipeline_status` міняється з
+`not_implemented` на `demo_mode`/`ready` залежно від того, чи checkpoint позначений
+`demo_mode`.
