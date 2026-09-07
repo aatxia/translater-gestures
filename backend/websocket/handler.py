@@ -36,6 +36,7 @@ from app.core.config import get_settings
 from app.core.logging import get_logger
 from app.services.inference_provider import get_inference_service
 from app.services.inference_service import MLNotReadyError
+from app.services.translation_service import RuleBasedTranslationService
 from fastapi import WebSocket, WebSocketDisconnect
 from starlette.websockets import WebSocketState
 
@@ -62,6 +63,11 @@ from websocket.protocol import (
 )
 
 logger = get_logger(__name__)
+
+# Stateless (a small hand-authored lexicon, see ml/nlp/gloss_to_text.py) --
+# unlike the landmark extractor / inference service, there's nothing here
+# worth lazily loading or caching failure state for.
+translation_service = RuleBasedTranslationService()
 
 _landmark_extractor: LandmarkExtractor | None = None
 _landmark_extractor_error: str | None = None
@@ -235,10 +241,21 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
                 continue
 
             confirmed = gloss_aggregator.update(prediction.sign, prediction.confidence)
+            display_text = prediction.text
+            if confirmed:
+                # Phase 12: translate the just-confirmed gloss into a real
+                # Ukrainian sentence when the (intentionally small) rule-based
+                # lexicon covers it; otherwise keep the raw gloss text rather
+                # than guessing a composition -- see ml/nlp/gloss_to_text.py.
+                try:
+                    composed = translation_service.gloss_to_text([prediction.sign])
+                    display_text = f"[DEMO] {composed}" if inference_service.is_demo_mode else composed
+                except ValueError:
+                    pass
             await websocket.send_json(
                 PredictionMessage(
                     type="final_prediction" if confirmed else "prediction",
-                    text=prediction.text,
+                    text=display_text,
                     confidence=prediction.confidence,
                     is_final=confirmed,
                 ).model_dump()

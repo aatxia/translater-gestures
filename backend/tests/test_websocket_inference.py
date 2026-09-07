@@ -145,3 +145,10 @@ def test_confirms_a_final_prediction_once_the_gloss_stabilizes(tmp_path, monkeyp
     # the "signer" keeps holding it.
     assert len(final_predictions) == 1
     assert final_predictions[0]["is_final"] is True
+    # Phase 12: every demo gloss is a standalone word in the Phase 12
+    # lexicon, so the confirmed prediction's text is now a real (if trivial)
+    # composed Ukrainian sentence, not the raw gloss label.
+    text = final_predictions[0]["text"]
+    assert text.startswith("[DEMO] ")
+    composed = text.removeprefix("[DEMO] ")
+    assert composed in {"Привіт.", "Дякую.", "Так.", "Ні.", "Будь ласка."}

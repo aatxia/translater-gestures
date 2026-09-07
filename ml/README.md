@@ -216,5 +216,40 @@ for gloss, confidence in predictions:
 ```
 
 The accumulated `agg.sequence` (e.g. `["I", "WANT", "WATER"]`) is exactly
-what Phase 12's `TranslationService.gloss_to_text()` will need once it's
-implemented.
+what `TranslationService.gloss_to_text()` (Phase 12, below) needs.
+
+## Gloss-to-text NLP (Phase 12)
+
+```
+ml/nlp/
+└── gloss_to_text.py      # compose_sentence(): rule-based gloss sequence -> Ukrainian sentence
+```
+
+A genuine (if narrow) grammar engine — conjugates verbs by subject person,
+declines nouns into whichever case the verb governs, and inserts negation in
+the correct preverbal position — **not** `' '.join(gloss_sequence)`. Coverage
+is intentionally small: no public annotated УЖМ dataset exists yet (Phase 8),
+so there's no real gloss vocabulary to build a broad lexicon from. Every
+gloss and pattern it accepts is listed explicitly in the module; anything
+else raises `UnknownGlossError` or `UnsupportedPatternError` (both
+`ValueError`) rather than guessing.
+
+```python
+from ml.nlp.gloss_to_text import compose_sentence
+
+compose_sentence(["I", "WANT", "WATER"])  # -> "Я хочу води."
+compose_sentence(["I", "NOT", "WANT", "WATER"])  # -> "Я не хочу води."
+compose_sentence(["TAK"])  # -> "Так." (the demo-dataset glosses are all standalone words)
+```
+
+`backend/app/services/translation_service.py::RuleBasedTranslationService`
+wraps this for the `TranslationService` interface (`text_to_gloss` stays
+`NotConfigured` until Phase 14). The WebSocket handler calls it for every
+just-**confirmed** gloss (Phase 11's `is_final=true` moment): if the lexicon
+covers that single gloss, the confirmed prediction's `text` becomes the
+composed Ukrainian sentence instead of the raw gloss label — e.g. a
+confirmed `PRIVIT` becomes `[DEMO] Привіт.` rather than `[DEMO] PRIVIT`.
+Translating the full accumulated multi-gloss sequence (real sentences like
+"Я хочу води.") isn't wired into the live WebSocket stream yet — that needs
+real multi-word gloss sequences (no dataset yet) and a way to know when a
+*sentence*, not just one sign, is complete.

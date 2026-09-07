@@ -2,19 +2,21 @@
 TranslationService — abstraction over gloss-sequence -> natural Ukrainian text
 (and the reverse direction, text -> gloss sequence for the avatar).
 
-STATUS: interface only in Phase 2. The rule-based baseline (per master-prompt
-section 14/17) is real, buildable logic (no ML dependency) and will be
-implemented in Phase 12 (gloss->text) and Phase 14 (text->gloss) — deliberately
-scheduled there rather than stubbed early, so it can be built and tested
-alongside the gloss sequences it actually needs to handle.
+STATUS: gloss_to_text is real as of Phase 12 -- RuleBasedTranslationService
+delegates to ml/nlp/gloss_to_text.py, a genuine (if narrow, hand-authored
+lexicon) rule-based grammar engine per master-prompt section 14/17, not a
+naive `' '.join()`. text_to_gloss stays NotConfigured until Phase 14 --
+deliberately scheduled there rather than stubbed early, so it can be built
+and tested alongside the text-parsing it actually needs to handle.
 
-Once implemented, `RuleBasedTranslationService` will satisfy this interface,
-and later an HF-Transformers-backed implementation can replace it via
-`NLP_BACKEND=huggingface` in .env without touching callers.
+Later an HF-Transformers-backed implementation can replace either direction
+via `NLP_BACKEND=huggingface` in .env without touching callers.
 """
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+
+from ml.nlp.gloss_to_text import compose_sentence
 
 
 class NotConfiguredError(RuntimeError):
@@ -42,6 +44,28 @@ class NotConfiguredTranslationService(TranslationService):
             "Gloss-to-text NLP is not implemented yet (scheduled: Phase 12). "
             "See docs/architecture.md and PROJECT_STATUS.md."
         )
+
+    def text_to_gloss(self, text: str) -> list[str]:
+        raise NotConfiguredError(
+            "Text-to-gloss NLP is not implemented yet (scheduled: Phase 14). "
+            "See docs/architecture.md and PROJECT_STATUS.md."
+        )
+
+
+class RuleBasedTranslationService(TranslationService):
+    """Phase 12: gloss_to_text is a real rule-based engine (see
+    ml/nlp/gloss_to_text.py for exactly which glosses/patterns it covers --
+    coverage is intentionally small, since no public annotated УЖМ dataset
+    exists yet to build a broader lexicon from). An unrecognized gloss or
+    gloss combination raises UnknownGlossError/UnsupportedPatternError
+    (both ValueError subclasses) rather than guessing.
+
+    text_to_gloss is unchanged from NotConfiguredTranslationService --
+    that direction is Phase 14's job.
+    """
+
+    def gloss_to_text(self, gloss_sequence: list[str]) -> str:
+        return compose_sentence(gloss_sequence)
 
     def text_to_gloss(self, text: str) -> list[str]:
         raise NotConfiguredError(
