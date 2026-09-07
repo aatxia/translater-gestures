@@ -1,6 +1,6 @@
 # PROJECT STATUS
 
-Останнє оновлення: Phase 10 complete.
+Останнє оновлення: Phase 11 complete.
 
 ## Що вже є
 
@@ -409,19 +409,55 @@ split→train→checkpoint pipeline коректний end-to-end. Реальн�
   `{"type":"prediction","text":"[DEMO] DYAKUYU","confidence":0.229...,"is_final":false}`,
   стабільно на наступних кадрах (sliding window).
 
-**Known limitations:** немає сегментації меж жесту (коли один жест закінчився і почався
-наступний) — модель просто класифікує поточне вікно щокадру, тому `is_final` завжди `false`.
-Реальна точність розпізнавання УЖМ = 0, поки нема реального датасету (Phase 8) і реального
-тренування (Phase 9 на ньому). `model_type` підтримує лише `lstm` — transformer/video_jepa
-залишаються заявленими в конфігу, але нереалізованими (чесна `NotImplementedError`, не
-мовчазний fallback).
+**Known limitations:** на момент Phase 10 не було сегментації меж жесту — модель просто
+класифікувала поточне вікно щокадру, тому `is_final` був завжди `false` (виправлено в Phase 11,
+нижче). Реальна точність розпізнавання УЖМ = 0, поки нема реального датасету (Phase 8) і
+реального тренування (Phase 9 на ньому). `model_type` підтримує лише `lstm` —
+transformer/video_jepa залишаються заявленими в конфігу, але нереалізованими (чесна
+`NotImplementedError`, не мовчазний fallback).
+
+## PHASE 11 — Gloss-sequence aggregation (COMPLETE)
+
+Сирий потік per-frame передбачень (Phase 10: одне слово щокадру, поки жест утримується) тепер
+перетворюється на стабільну послідовність gloss:
+
+- `ml/inference/aggregator.py` — `GlossSequenceAggregator`: **не** справжня лінгвістична
+  сегментація (без детекції фаз рух/утримання) — детермінований debounce-евристик, чесно
+  так і задокументований. Жест має бути передбачений `stability_frames` разів поспіль (вище
+  `confidence_threshold`), щоб бути "підтвердженим" і доданим у `.sequence`; той самий
+  утримуваний жест повторно не підтверджується. Низька впевненість перериває серію, а не
+  мовчки в ній рахується.
+- `backend/websocket/handler.py` — кожне з'єднання тримає власний `GlossSequenceAggregator`
+  (як і sliding window). Більшість кадрів лишаються `"prediction"` (`is_final=false`);
+  `"final_prediction"` (`is_final=true`) відправляється рівно один раз у момент підтвердження.
+  Підтверджена послідовність логується (мітки gloss — це метадані, не сирі дані, дозволено
+  правилом приватності).
+- `backend/app/core/config.py` + `.env.example` — `WS_GLOSS_STABILITY_FRAMES` (default 5),
+  `WS_GLOSS_CONFIDENCE_THRESHOLD` (default 0.5) — нічого не захардкожено.
+
+**Перевірено наживо:**
+- `pytest`: `ml/` — 81 passed (+8 `ml/tests/test_aggregator.py`: поріг стабільності,
+  неповторне підтвердження того самого жесту, переривання серії низькою впевненістю, reset);
+  `backend/` — 20 passed (+1 WS-рівня: `WS_GLOSS_CONFIDENCE_THRESHOLD=0` ізолює агрегацію від
+  калібрування впевненості recognizer'а, яке вже покрито в Phase 10 тестах). `ruff check` —
+  чисто.
+- **Реальний E2E, не мок**: натренований demo-checkpoint + живий `websockets`-клієнт через
+  справжній `uvicorn` (`WS_GLOSS_CONFIDENCE_THRESHOLD=0.0`, `stability_frames=5` за
+  замовчуванням): кадри 31-34 → `"prediction"` (`is_final=false`), кадр 35 (5-те однакове
+  передбачення поспіль) → рівно один `"final_prediction"` (`is_final=true`), кадри 36-39 →
+  знову `"prediction"` (жест утримується далі, повторно не підтверджується).
+
+**Known limitations:** евристика стабільності — не справжнє розпізнавання меж жестів
+(рух→утримання→рух); коротко утримані або швидко пов'язані жести можуть підтвердитись не там,
+де лінгвістично мала б бути межа. Послідовність `agg.sequence` наразі лише логується на
+бекенді, не передається клієнту окремим WS-повідомленням (client бачить лише
+`is_final=true`/`"final_prediction"` per-подію) — повний список поки не потрібен нікому, крім
+майбутнього Phase 12.
 
 ## Наступна фаза
 
-**PHASE 11 (орієнтовно) — Gloss-sequence aggregation**: наразі WebSocket віддає сирий
-per-frame prediction (одне слово на ковзне вікно, без меж жесту). Перш ніж
-`backend/app/services/translation_service.py::gloss_to_text()` (заявлено як Phase 12 у власному
-docstring) матиме що обробляти, потрібен проміжний шар: тимчасове згладжування/дедублікація
-послідовних однакових передбачень, поріг confidence, і базова евристика "жест закінчився" —
-щоб перетворити потік `is_final=false` prediction-повідомлень на реальну послідовність gloss
-(`["I", "WANT", "WATER"]`), яку Phase 12 зможе перекласти в речення.
+**PHASE 12 — Gloss-to-text NLP**: `backend/app/services/translation_service.py::gloss_to_text()`
+(вже заявлено в docstring цього файлу як Phase 12) — rule-based переклад послідовності gloss
+(`GlossSequenceAggregator.sequence`, тепер реально накопичується в Phase 11) у природне
+українське речення (відмінки/число/рід/порядок слів, розділ 14/17 ТЗ), а не наївний
+`' '.join()`. `RuleBasedTranslationService` замінить `NotConfiguredTranslationService`.

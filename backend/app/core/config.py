@@ -45,6 +45,10 @@ class Settings(BaseSettings):
     ws_max_fps: int = 15
     ws_heartbeat_interval_sec: int = 30
 
+    # --- Gloss-sequence aggregation (Phase 11: ml/inference/aggregator.py) ---
+    ws_gloss_stability_frames: int = 5
+    ws_gloss_confidence_threshold: float = 0.5
+
     # --- MediaPipe (Phase 6-7 CV pipeline) ---
     mediapipe_models_dir: Path = REPO_ROOT / "models" / "mediapipe"
 

@@ -112,3 +112,36 @@ def test_keeps_predicting_on_the_sliding_window_after_the_first_prediction(
             response = ws.receive_json()
             if i >= SEQUENCE_LENGTH - 1:
                 assert response["type"] == "prediction"
+
+
+def test_confirms_a_final_prediction_once_the_gloss_stabilizes(tmp_path, monkeypatch, reset_inference_caches):
+    """Phase 11: the same held sign, predicted repeatedly on the sliding
+    window, must eventually produce exactly one 'final_prediction' (gloss
+    aggregation), not stay interim forever."""
+    checkpoint_path = _train_tiny_checkpoint(tmp_path)
+    monkeypatch.setenv("MODEL_CHECKPOINT_PATH", str(checkpoint_path))
+    monkeypatch.setenv("WS_MAX_FPS", "100000")
+    monkeypatch.setenv("WS_GLOSS_STABILITY_FRAMES", "3")
+    # A barely-trained tiny checkpoint fed a stub (all-absent) landmark input
+    # won't reliably clear a real confidence bar -- 0.0 isolates aggregation
+    # behavior (this test) from recognizer confidence calibration (already
+    # covered by ml/tests/test_recognizer.py and test_lstm_inference_service.py).
+    monkeypatch.setenv("WS_GLOSS_CONFIDENCE_THRESHOLD", "0.0")
+    monkeypatch.setattr(ws_handler, "_get_landmark_extractor", lambda: _StubLandmarkExtractor())
+
+    frame_data = _blank_frame_data_url()
+    final_predictions = []
+
+    with client.websocket_connect("/ws") as ws:
+        ws.receive_json()
+        for i in range(SEQUENCE_LENGTH + 5):
+            ws.send_json({"type": "frame", "timestamp": i, "data": frame_data})
+            response = ws.receive_json()
+            if response["type"] == "final_prediction":
+                final_predictions.append(response)
+
+    # Same stub landmarks every frame -> same predicted gloss every frame ->
+    # confirmed exactly once (stability_frames=3), never re-confirmed while
+    # the "signer" keeps holding it.
+    assert len(final_predictions) == 1
+    assert final_predictions[0]["is_final"] is True

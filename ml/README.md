@@ -172,12 +172,12 @@ adapts its output to the app's `InferenceService`/`SignPrediction` contract.
 The WebSocket handler (`backend/websocket/handler.py`) buffers each
 connection's incoming feature vectors into a sliding window sized to the
 checkpoint's `sequence_length`; once full, every subsequent frame runs a real
-prediction (there's no sign-boundary detection yet, so every prediction is
-interim — `is_final=False` — never `"final_prediction"`). A `demo_mode`
-checkpoint's predicted text is prefixed `"[DEMO] "` so it can never be
-mistaken for real УЖМ recognition, and `/health`'s `ml_pipeline_status`
-reports `"demo_mode"` (vs `"not_implemented"` with no checkpoint, or
-`"ready"` once trained on real data).
+prediction (see Phase 11 below for how those raw per-frame predictions become
+`"final_prediction"` events). A `demo_mode` checkpoint's predicted text is
+prefixed `"[DEMO] "` so it can never be mistaken for real УЖМ recognition,
+and `/health`'s `ml_pipeline_status` reports `"demo_mode"` (vs
+`"not_implemented"` with no checkpoint, or `"ready"` once trained on real
+data).
 
 ```python
 from ml.inference.recognizer import SignRecognizer
@@ -186,3 +186,35 @@ recognizer = SignRecognizer("models/checkpoints/baseline/latest.pt", device="cpu
 result = recognizer.predict(feature_sequence)  # exactly recognizer.sequence_length frames
 print(result.gloss, result.confidence, result.is_demo_mode)
 ```
+
+## Gloss-sequence aggregation (Phase 11)
+
+```
+ml/inference/
+└── aggregator.py         # GlossSequenceAggregator: debounces raw predictions into a gloss sequence
+```
+
+Phase 10's sliding window produces one prediction *per frame*, so a held sign
+gets predicted dozens of times in a row. `GlossSequenceAggregator` is a
+deterministic debounce heuristic (**not** real sign-boundary/linguistic
+segmentation — no movement/hold-phase detection): a gloss must be predicted
+`stability_frames` times in a row, above `confidence_threshold`, before it's
+"confirmed" and appended to `.sequence`; it won't be re-confirmed while the
+same sign keeps being held. The WebSocket handler feeds it every prediction
+and only sends `"final_prediction"` (`is_final=true`) at the moment of
+confirmation — everything else stays `"prediction"` (`is_final=false`),
+configurable via `WS_GLOSS_STABILITY_FRAMES` / `WS_GLOSS_CONFIDENCE_THRESHOLD`
+(.env).
+
+```python
+from ml.inference.aggregator import GlossSequenceAggregator
+
+agg = GlossSequenceAggregator(stability_frames=5, confidence_threshold=0.5)
+for gloss, confidence in predictions:
+    if agg.update(gloss, confidence):
+        print("confirmed:", agg.sequence[-1])
+```
+
+The accumulated `agg.sequence` (e.g. `["I", "WANT", "WATER"]`) is exactly
+what Phase 12's `TranslationService.gloss_to_text()` will need once it's
+implemented.

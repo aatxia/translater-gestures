@@ -17,8 +17,13 @@ Inference (Phase 9-10): feature vectors are buffered into a sliding window
 LSTM checkpoint if one exists. If no checkpoint has been trained yet, the
 response stays an honest error reporting which modalities were actually
 detected -- never a fabricated sign prediction (section 40: "NO FAKE AI").
-There is no sign-boundary/segmentation logic yet, so every prediction is
-marked interim (is_final=False, "prediction"), never "final_prediction".
+
+Gloss aggregation (Phase 11): raw per-frame predictions are debounced by
+GlossSequenceAggregator (ml/inference/aggregator.py) into a stable gloss
+sequence -- most frames are still interim ("prediction", is_final=False);
+a "final_prediction" (is_final=True) fires only when the same gloss has
+been predicted `WS_GLOSS_STABILITY_FRAMES` times in a row above
+`WS_GLOSS_CONFIDENCE_THRESHOLD`.
 """
 from __future__ import annotations
 
@@ -39,6 +44,7 @@ from ml.features.feature_vector import (
     build_feature_vector,
     feature_vector_size,
 )
+from ml.inference.aggregator import GlossSequenceAggregator
 from ml.preprocessing.landmarks import (
     FeatureToggles,
     LandmarkExtractor,
@@ -99,6 +105,12 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
     # Per-connection: an isolated sliding window per signer, sized to the
     # loaded checkpoint's sequence_length once (if) inference is ready.
     feature_buffer: deque[list[float]] | None = None
+    # Per-connection: debounces the raw per-frame prediction stream into a
+    # stable gloss sequence (Phase 11 -- see ml/inference/aggregator.py).
+    gloss_aggregator = GlossSequenceAggregator(
+        stability_frames=settings.ws_gloss_stability_frames,
+        confidence_threshold=settings.ws_gloss_confidence_threshold,
+    )
 
     try:
         while True:
@@ -222,14 +234,22 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
                 await websocket.send_json(ErrorMessage(message=str(exc)).model_dump())
                 continue
 
+            confirmed = gloss_aggregator.update(prediction.sign, prediction.confidence)
             await websocket.send_json(
                 PredictionMessage(
-                    type="final_prediction" if prediction.is_final else "prediction",
+                    type="final_prediction" if confirmed else "prediction",
                     text=prediction.text,
                     confidence=prediction.confidence,
-                    is_final=prediction.is_final,
+                    is_final=confirmed,
                 ).model_dump()
             )
+            if confirmed:
+                logger.info(
+                    "WebSocket id=%s confirmed gloss #%s (sequence so far: %s)",
+                    conn_id,
+                    len(gloss_aggregator.sequence),
+                    gloss_aggregator.sequence,
+                )
 
             if frames_received % 30 == 0:
                 logger.info(
