@@ -43,10 +43,26 @@ export function useWebSocket(): UseWebSocketResult {
     const socket = new WebSocket(WS_URL);
     socketRef.current = socket;
 
-    socket.onopen = () => setStatus("open");
-    socket.onclose = () => setStatus("closed");
-    socket.onerror = () => setStatus("error");
+    // React StrictMode (dev only) double-invokes effects: mount -> cleanup -> mount.
+    // That closes this exact socket almost immediately while a second one opens.
+    // Without this guard, the first socket's belated onclose/onerror would
+    // overwrite the status set by the second (current) socket's onopen.
+    const isStale = () => socketRef.current !== socket;
+
+    socket.onopen = () => {
+      if (isStale()) return;
+      setStatus("open");
+    };
+    socket.onclose = () => {
+      if (isStale()) return;
+      setStatus("closed");
+    };
+    socket.onerror = () => {
+      if (isStale()) return;
+      setStatus("error");
+    };
     socket.onmessage = (event: MessageEvent<string>) => {
+      if (isStale()) return;
       try {
         const parsed: unknown = JSON.parse(event.data);
         if (isServerMessage(parsed)) {

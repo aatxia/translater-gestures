@@ -123,4 +123,26 @@ describe("useWebSocket", () => {
 
     expect(result.current.status).toBe("closed");
   });
+
+  it("ignores a belated close event from a stale (already-replaced) socket", async () => {
+    // Simulates React StrictMode's dev-only mount -> cleanup -> mount cycle:
+    // the first socket is closed, a second one opens, and then the first
+    // socket's close event finally fires. The stale event must not override
+    // the current (open) status.
+    const { result } = renderHook(() => useWebSocket());
+
+    act(() => result.current.connect());
+    const firstSocket = instances[0]!;
+    act(() => result.current.disconnect());
+
+    act(() => result.current.connect());
+    const secondSocket = instances[1]!;
+    act(() => secondSocket.simulateOpen());
+    expect(result.current.status).toBe("open");
+
+    // Belated close event from the first (now-replaced) socket arrives late.
+    act(() => firstSocket.onclose?.());
+
+    expect(result.current.status).toBe("open");
+  });
 });
