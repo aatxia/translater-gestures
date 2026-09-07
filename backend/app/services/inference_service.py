@@ -69,10 +69,10 @@ class NotConfiguredInferenceService(InferenceService):
 
     def predict(self, landmark_sequence: list[list[float]]) -> SignPrediction:
         raise MLNotReadyError(
-            "No trained sign-recognition model is loaded yet. "
-            "This requires Phase 6-7 (MediaPipe landmark extraction) and "
-            "Phase 9-10 (baseline model training + real-time inference) "
-            "to be completed with a real dataset. See PROJECT_STATUS.md."
+            "Sign-recognition ML pipeline is not implemented yet: no trained model is "
+            "loaded. This requires Phase 6-7 (MediaPipe landmark extraction) and "
+            "Phase 9-10 (baseline model training + real-time inference) to be "
+            "completed with a real dataset. See PROJECT_STATUS.md."
         )
 
     def is_ready(self) -> bool:

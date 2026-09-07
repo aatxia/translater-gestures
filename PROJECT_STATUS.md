@@ -1,6 +1,6 @@
 # PROJECT STATUS
 
-Останнє оновлення: Phase 3 complete.
+Останнє оновлення: Phase 5 complete.
 
 ## Що вже є
 
@@ -104,8 +104,78 @@
 **Known limitations:** камера, WebSocket-стрім, розпізнавання, avatar — усі UI-блоки для них
 є, але позначені як "буде підключено в Phase N" (не приховано, чітко видно користувачу).
 
+## PHASE 4 — Camera (COMPLETE)
+
+Реалізовано робочий доступ до камери браузера:
+
+- `hooks/useCamera.ts` — `getUserMedia`, стани (`idle` / `requesting_permission` /
+  `streaming` / `stopped` / `error`), коректний permission/error handling
+  (`NotAllowedError` → permission_denied, `NotFoundError` → no_camera_found,
+  `NotReadableError` → camera_in_use, відсутність `mediaDevices` → unsupported),
+  configurable FPS (clamp 10-15, за замовчуванням 12) і роздільна здатність (640×480 default,
+  через `NEXT_PUBLIC_CAMERA_*` env vars), cleanup (зупинка треків) при unmount/stop.
+- Вбудований, але поки не активований, controlled frame-capture loop (`onFrame` callback,
+  canvas→JPEG dataURL) — за принципом "не відправляй кожен frame безконтрольно": він нічого
+  нікуди не шле сам по собі, чекає підключення до WebSocket клієнта в Phase 5.
+- `components/Camera/Camera.tsx` — preview, кнопки Увімкнути/Вимкнути, живий статус, помилки
+  українською. Підключено до `/translator` замість плейсхолдера.
+- `frontend/.env.example` — окремий env-файл для `npm run dev` (Next.js читає `.env.local` з
+  директорії frontend, а не з кореня репо; докер-контейнер продовжує брати кореневий `.env`).
+
+**Перевірено наживо:** `tsc --noEmit` — 0 помилок, `eslint` — 0 помилок/warnings,
+`vitest run` — 10/10 passed (5 тестів hook'а: permission granted/denied/unsupported/stop/fps-clamp;
+3 тести компонента: inactive/streaming/error стани; +2 старих ConnectionStatus), `next build` —
+успішний.
+
+**Known limitations:** frame-capture loop існує, але `onFrame` ніде ще не передається (Phase 5
+підключить його до WebSocket клієнта). Реальну камеру в headless-пісочниці перевірити неможливо
+(немає фізичного пристрою) — перевірено через мокнутий `getUserMedia` у тестах; **рекомендую
+тобі підтвердити на своїй машині в браузері**, що камера реально вмикається на `/translator`.
+
+## PHASE 5 — WebSocket (COMPLETE)
+
+Реалізовано real-time WebSocket protocol між frontend і backend:
+
+**Backend** (`backend/websocket/{protocol,manager,handler}.py`, розкладені за структурою з
+розділу 4 ТЗ, окремо від `app/`):
+- `protocol.py` — Pydantic-схеми `FrameMessage` (client→server), `PredictionMessage` /
+  `ErrorMessage` / `ConnectionMessage` (server→client), `parse_client_message()` з чіткими
+  помилками замість краху з'єднання.
+- `manager.py` — `ConnectionManager`, трекає активні з'єднання, логує connect/disconnect
+  (без сирих даних — тільки id/timestamp/count, за правилом приватності).
+- `handler.py` — головний message loop: перевірка типу/розміру повідомлення
+  (`WS_MAX_MESSAGE_SIZE_BYTES`, закриває з'єднання код 1009 при перевищенні), rate limiting
+  (`WS_MAX_FPS`, зайві кадри відхиляються з чіткою помилкою, не тихо), і — оскільки ML pipeline
+  ще не існує (Phase 6-10) — чесна `{"type": "error", "message": "...not implemented yet..."}`
+  відповідь на кожен валідний кадр, БЕЗ фейкового prediction.
+- Підключено в `app/main.py` через `app/api/websocket/routes.py` (`/ws` endpoint).
+
+**Frontend**:
+- `hooks/useWebSocket.ts` — підключення, статуси (`idle`/`connecting`/`open`/`closed`/`error`),
+  `sendFrame()` (шле тільки коли `readyState === OPEN`), парсинг вхідних `ServerMessage` з
+  безпечним ігноруванням некоректного JSON.
+- `components/Camera/Camera.tsx` — додано опціональний `onFrame` проп (не ламає Phase 4 API).
+- `components/Translator/TranslatorView.tsx` — новий client-компонент, який з'єднує камеру з
+  WebSocket (`onFrame={sendFrame}`) і показує живий статус з'єднання + останнє повідомлення
+  backend замість статичного плейсхолдера. `/translator` тепер рендерить саме його.
+
+**Перевірено наживо:**
+- Backend: `pytest` — 14/14 passed (включно з 8 новими WS-тестами: connect ack, чесна
+  ML-помилка на валідний кадр, invalid JSON, unknown type, missing field, rate limiting,
+  oversized message → закриття з'єднання), `ruff check` — чисто.
+- Frontend: `vitest` — 17/17 passed (5 нових для `useWebSocket`), `eslint`/`tsc`/`next build` —
+  чисто.
+- **Реальний E2E-обмін** через живий `websockets` клієнт проти запущеного `uvicorn`: connection
+  ack отримано, валідний frame → чесна ML-помилка (не фейковий "вода"), невідомий тип
+  повідомлення → чітка помилка без розриву з'єднання.
+
+**Known limitations:** кадри з камери зараз реально шлються на backend, але backend поки завжди
+відповідає "ML pipeline not implemented" — це очікувано і зникне в Phase 9-10.
+
 ## Наступна фаза
 
-**PHASE 4 — Camera**: `useCamera` hook (getUserMedia, preview, start/stop, permission/error
-handling, configurable FPS 10-15 та роздільна здатність 640x480), підключений до
-`components/Camera/` на сторінці `/translator` замість поточного плейсхолдера.
+**PHASE 6 — MediaPipe preprocessing**: `ml/preprocessing/{video_reader,landmarks,normalization,
+augmentation}.py` — прийом base64 JPEG кадру з WS `frame` message, детекція hands/pose/face
+через MediaPipe, нормалізація координат відносно тіла/плечей/масштабу. Це перший крок, після
+якого backend зможе відповідати реальними landmark-даними замість завжди "not implemented"
+(сам prediction ще чекає Phase 9-10, бо потребує навченої моделі).
