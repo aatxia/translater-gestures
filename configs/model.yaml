@@ -1,0 +1,21 @@
+# Model and feature configuration.
+#
+# Mirrors the same-named settings in .env (FEATURES_*, MODEL_*) -- .env is
+# what the running backend actually reads; this file is the reference for
+# ML experiments (Phase 9+: ml/training/train.py will load a variant of this
+# per experiment, see docs/architecture.md section 6 and master-prompt
+# section 31 "experiment tracking").
+
+camera:
+  fps: 12
+  width: 640
+  height: 480
+
+model:
+  type: lstm # lstm | transformer | video_jepa
+  sequence_length: 32
+
+features:
+  hands: true
+  pose: true
+  face: true

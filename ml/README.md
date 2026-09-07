@@ -56,6 +56,27 @@ hand/pose/face in a frame, the corresponding array is zero-filled AND
 builder, Phase 9 model) can tell "detected at the origin" apart from "not
 detected".
 
+## Feature vectors (Phase 7)
+
+```
+ml/features/
+├── hands.py            # left+right hand -> (126,) vector
+├── pose.py              # 8 selected upper-body landmarks -> (24,) vector
+├── face.py              # 24 selected landmarks (brows/eyes/mouth) -> (72,) vector
+└── feature_vector.py    # combines enabled modalities per FeatureConfig (section 9 experiments)
+```
+
+```python
+from ml.features.feature_vector import FeatureConfig, build_feature_vector
+
+config = FeatureConfig(hands=True, pose=True, face=False)  # hands+pose experiment
+vector = build_feature_vector(normalized, config)  # shape driven entirely by config
+```
+
+This is exactly what `backend/websocket/handler.py` calls today for every incoming
+frame — the WebSocket already reports real detection status and feature vector
+size, it just has no trained model yet to turn that vector into a prediction.
+
 ## Running tests
 
 ```bash

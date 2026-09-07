@@ -9,31 +9,65 @@ Security (section 36):
 - the connection is closed cleanly on protocol violations that indicate a
   misbehaving/hostile client (oversized payloads).
 
-ML honesty (section 40): no CV/temporal model exists yet (Phase 6-10), so a
-valid frame gets an honest "not implemented" error, never a fabricated
-prediction. This makes the handler trivial to upgrade later: only the single
-marked block below needs to change once InferenceService has a real
-implementation.
+CV pipeline (Phase 6-7): each valid frame is decoded and run through the
+real MediaPipe landmark extractor + normalization + feature vector builder.
+This is genuine landmark extraction, not a stub -- but there is still no
+trained temporal model (Phase 9-10), so the response is an honest error that
+now also reports which modalities were actually detected, never a
+fabricated sign prediction (section 40: "NO FAKE AI").
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import time
 
 from fastapi import WebSocket, WebSocketDisconnect
+from ml.features.feature_vector import FeatureConfig, build_feature_vector, feature_vector_size
+from ml.preprocessing.landmarks import (
+    FeatureToggles,
+    LandmarkExtractor,
+    ModelNotFoundError,
+)
+from ml.preprocessing.normalization import normalize_frame
+from ml.preprocessing.video_reader import FrameDecodeError, decode_base64_frame
 from starlette.websockets import WebSocketState
 
 from app.core.config import get_settings
 from app.core.logging import get_logger
-from app.services.inference_service import MLNotReadyError, NotConfiguredInferenceService
 from websocket.manager import connection_manager
 from websocket.protocol import ConnectionMessage, ErrorMessage, ProtocolError, parse_client_message
 
 logger = get_logger(__name__)
 
-# Phase 6-10 will replace this with a real, checkpoint-backed InferenceService
-# (selected via settings.model_type), without changing the loop below.
-_inference_service = NotConfiguredInferenceService()
+_landmark_extractor: LandmarkExtractor | None = None
+_landmark_extractor_error: str | None = None
+
+
+def _get_landmark_extractor() -> LandmarkExtractor | None:
+    """Lazily create the (process-wide, reused across connections) landmark
+    extractor. If the model files aren't downloaded yet, cache the failure
+    so we don't re-check the filesystem on every single frame -- but still
+    surface a clear, actionable error to the client."""
+    global _landmark_extractor, _landmark_extractor_error
+    if _landmark_extractor is not None or _landmark_extractor_error is not None:
+        return _landmark_extractor
+
+    settings = get_settings()
+    try:
+        _landmark_extractor = LandmarkExtractor(
+            model_dir=settings.mediapipe_models_dir,
+            features=FeatureToggles(
+                hands=settings.features_hands,
+                pose=settings.features_pose,
+                face=settings.features_face,
+            ),
+        )
+    except ModelNotFoundError as exc:
+        _landmark_extractor_error = str(exc)
+        logger.warning("Landmark extractor unavailable: %s", _landmark_extractor_error)
+    return _landmark_extractor
+
 
 
 async def websocket_endpoint(websocket: WebSocket) -> None:
@@ -73,9 +107,7 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
                 continue
 
             try:
-                # Parsed and validated now; Phase 6-7 will consume `.data`
-                # (base64 JPEG) here to run MediaPipe landmark extraction.
-                parse_client_message(raw)
+                frame_message = parse_client_message(raw)
             except ProtocolError as exc:
                 await websocket.send_json(ErrorMessage(message=str(exc)).model_dump())
                 continue
@@ -95,21 +127,52 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
             frames_received += 1
 
             try:
-                # No landmarks extracted yet in Phase 5 -- CV pipeline lands in
-                # Phase 6-7. This call always raises today; kept explicit so the
-                # honest-error path and the future real-prediction path are the
-                # same code shape.
-                prediction = _inference_service.predict(landmark_sequence=[])
+                decoded_frame = decode_base64_frame(frame_message.data)
+            except FrameDecodeError as exc:
                 await websocket.send_json(
-                    {
-                        "type": "final_prediction" if prediction.is_final else "prediction",
-                        "text": prediction.text,
-                        "confidence": prediction.confidence,
-                        "is_final": prediction.is_final,
-                    }
+                    ErrorMessage(message=f"Could not decode frame: {exc}").model_dump()
                 )
-            except MLNotReadyError as exc:
-                await websocket.send_json(ErrorMessage(message=str(exc)).model_dump())
+                continue
+
+            extractor = _get_landmark_extractor()
+            if extractor is None:
+                await websocket.send_json(
+                    ErrorMessage(
+                        message=_landmark_extractor_error
+                        or "Landmark extractor is not available."
+                    ).model_dump()
+                )
+                continue
+
+            # detect() is a blocking call; run it off the event loop so one
+            # slow frame doesn't stall every other connection.
+            raw_landmarks = await asyncio.to_thread(extractor.extract, decoded_frame)
+            normalized = normalize_frame(raw_landmarks)
+
+            feature_config = FeatureConfig(
+                hands=settings.features_hands,
+                pose=settings.features_pose,
+                face=settings.features_face,
+            )
+            feature_vector = build_feature_vector(normalized, feature_config)
+
+            # Real landmarks ARE extracted now (Phase 6-7) -- but there is still
+            # no trained temporal model (Phase 9-10), so this stays an honest
+            # error, now with real detection info instead of a fabricated sign.
+            await websocket.send_json(
+                ErrorMessage(
+                    message=(
+                        "Sign-recognition ML pipeline is not implemented yet "
+                        "(Phase 9-10: no trained temporal model). Landmarks were "
+                        f"extracted: left_hand={normalized.present['left_hand']}, "
+                        f"right_hand={normalized.present['right_hand']}, "
+                        f"pose={normalized.present['pose']}, "
+                        f"face={normalized.present['face']} "
+                        f"(feature vector size: {feature_vector.shape[0]}/"
+                        f"{feature_vector_size(feature_config)})."
+                    )
+                ).model_dump()
+            )
 
             if frames_received % 30 == 0:
                 logger.info(

@@ -1,9 +1,23 @@
+import base64
+
+import cv2
+import numpy as np
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
 from app.main import app
 
 client = TestClient(app)
+
+
+def _blank_frame_data_url(width: int = 64, height: int = 48) -> str:
+    """A real, valid JPEG (blank/no hand) as a base64 data URL -- the same
+    format the frontend's canvas.toDataURL() produces."""
+    image = np.full((height, width, 3), 120, dtype=np.uint8)
+    ok, buffer = cv2.imencode(".jpg", image)
+    assert ok
+    b64 = base64.b64encode(buffer.tobytes()).decode("ascii")
+    return f"data:image/jpeg;base64,{b64}"
 
 
 def test_websocket_sends_connection_ack_on_connect():
@@ -13,14 +27,26 @@ def test_websocket_sends_connection_ack_on_connect():
 
 
 def test_valid_frame_gets_an_honest_ml_not_implemented_error_not_a_fake_prediction():
-    """Core 'NO FAKE AI' rule: no trained model exists yet, so a well-formed
-    frame message must get an explicit error, never a fabricated sign/text."""
+    """Core 'NO FAKE AI' rule: real landmarks are extracted (Phase 6-7), but no
+    trained temporal model exists yet, so a well-formed frame must get an
+    explicit error -- never a fabricated sign/text."""
     with client.websocket_connect("/ws") as ws:
         ws.receive_json()  # connection ack
+        ws.send_json({"type": "frame", "timestamp": 1, "data": _blank_frame_data_url()})
+        response = ws.receive_json()
+        assert response["type"] == "error"
+        assert "not implemented" in response["message"].lower()
+        # A blank frame has no hand in it -- must honestly say so, not fabricate one.
+        assert "left_hand=False" in response["message"]
+
+
+def test_frame_with_undecodable_data_returns_a_clear_decode_error():
+    with client.websocket_connect("/ws") as ws:
+        ws.receive_json()
         ws.send_json({"type": "frame", "timestamp": 1, "data": "AAAA"})
         response = ws.receive_json()
         assert response["type"] == "error"
-        assert "not" in response["message"].lower()
+        assert "decode" in response["message"].lower()
 
 
 def test_invalid_json_returns_error_and_keeps_connection_open():
@@ -32,7 +58,7 @@ def test_invalid_json_returns_error_and_keeps_connection_open():
         assert "json" in response["message"].lower()
 
         # connection must still be usable afterwards
-        ws.send_json({"type": "frame", "timestamp": 1, "data": "AAAA"})
+        ws.send_json({"type": "frame", "timestamp": 1, "data": _blank_frame_data_url()})
         follow_up = ws.receive_json()
         assert follow_up["type"] == "error"
 
@@ -58,12 +84,13 @@ def test_missing_required_field_returns_error():
 def test_second_frame_within_min_interval_is_rate_limited():
     with client.websocket_connect("/ws") as ws:
         ws.receive_json()
-        ws.send_json({"type": "frame", "timestamp": 1, "data": "AAAA"})
+        frame_data = _blank_frame_data_url()
+        ws.send_json({"type": "frame", "timestamp": 1, "data": frame_data})
         first = ws.receive_json()
         assert first["type"] == "error"  # ML-not-ready error
 
         # Sent immediately after -- far faster than any configured max_fps allows.
-        ws.send_json({"type": "frame", "timestamp": 2, "data": "AAAA"})
+        ws.send_json({"type": "frame", "timestamp": 2, "data": frame_data})
         second = ws.receive_json()
         assert second["type"] == "error"
         assert "rate" in second["message"].lower()

@@ -1,6 +1,6 @@
 # PROJECT STATUS
 
-Останнє оновлення: Phase 6 complete.
+Останнє оновлення: Phase 7 complete.
 
 ## Що вже є
 
@@ -211,10 +211,49 @@ mediapipe 1.0.1, `mp.solutions` відсутній).
 код ідентичний для всіх трьох модальностей, тож ризик низький, але варто перевірити на своїй
 машині після `scripts/download_mediapipe_models.sh`.
 
+## PHASE 7 — Landmark extraction (COMPLETE)
+
+Feature-вектори та повне підключення реального CV pipeline у WebSocket:
+
+- `ml/features/{hands,pose,face}.py` — фіксовані feature-вектори з *обраного підмножини*
+  landmarks (не всі 33/478 точок, а лише релевантні: hands — усі 21×2, pose — 8 верхньої
+  частини тіла (плечі/лікті/зап'ястя/стегна), face — 24 точки для non-manual grammar markers:
+  брови, очі, рот).
+- `ml/features/feature_vector.py` — `FeatureConfig` + `build_feature_vector()`/
+  `feature_vector_size()`, що реалізує розділ 9 ТЗ: hands-only / hands+pose / hands+pose+face
+  вибирається виключно конфігом, розмір вектора змінюється автоматично (перевірено тестом).
+- `configs/model.yaml` — єдине джерело для camera/model/features конфігурації експериментів.
+- **`backend/websocket/handler.py` тепер реально викликає CV pipeline**: decode кадру →
+  `LandmarkExtractor.extract()` (в окремому потоці через `asyncio.to_thread`, щоб не блокувати
+  event loop) → `normalize_frame()` → `build_feature_vector()`. ML-помилка залишається чесною
+  (Phase 9-10 ще попереду), але тепер містить РЕАЛЬНІ дані: які модальності виявлено і розмір
+  feature-вектора — підготовка до debug mode (розділ 41).
+- `backend/app/core/config.py` — sys.path bootstrap, щоб backend міг імпортувати сусідній `ml/`
+  пакет незалежно від робочої директорії; `mediapipe_models_dir` налаштування.
+- `backend/requirements.txt` тепер підключає `ml/requirements.txt` (mediapipe/opencv/numpy) —
+  backend реально імпортує CV pipeline при старті.
+
+**Перевірено наживо (справжній E2E, не мок):**
+- `pytest`: ml — 29 passed/1 skipped, backend — 15/15 passed (WS-тести тепер шлють РЕАЛЬНИЙ
+  JPEG замість фейкового "AAAA", перевіряють що на порожньому кадрі чесно `left_hand=False`
+  тощо). `ruff check` — чисто в обох пакетах.
+- Живий WebSocket-клієнт проти запущеного `uvicorn`: реальний кадр → `FRAME RESPONSE:
+  {"type":"error","message":"...Landmarks were extracted: left_hand=False, right_hand=False,
+  pose=False, face=False (feature vector size: 198/198)."}` — 198 = 126 (hands) + 72 (face);
+  pose вимкнено локально через `FEATURES_POSE=false` (модель недоступна в цій пісочниці, див.
+  Phase 6 known limitations).
+
+**Known limitations:** локальний `.env` у цій пісочниці має `FEATURES_POSE=false`, оскільки
+`pose_landmarker.task` не вдалось завантажити (Google Storage заблокований мережею sandbox).
+**У `.env.example` значення за замовчуванням лишається `true`** — на твоїй машині після
+`scripts/download_mediapipe_models.sh` (де офіційний URL не заблокований) все запрацює з усіма
+трьома модальностями без додаткових змін.
+
 ## Наступна фаза
 
-**PHASE 7 — Landmark extraction**: `ml/features/{hands,pose,face}.py` — побудова фіксованого
-feature-вектора з `NormalizedFrame` для кожної модальності окремо (з урахуванням `configs/
-model.yaml` feature toggles), і підключення в `backend/websocket/handler.py` замість порожнього
-`landmark_sequence=[]` — щоб WS відповідав реальною кількістю виявлених рук/пози/обличчя
-(підготовка до debug mode, розділ 41), хоча сам prediction все ще чекає Phase 9-10.
+**PHASE 8 — Dataset pipeline**: `data/{raw,processed,annotations,splits}/`, `scripts/
+create_dataset_split.py` (signer-independent train/val/test split, розділ 11 ТЗ — суворо
+заборонено, щоб один signer_id був і в train, і в test), формат анотацій (розділ 10). Це
+зовнішня залежність — потрібен реальний відеодатасет УЖМ з розміткою signer_id, якого поки
+немає; buде створено інфраструктуру + synthetic/debug dataset лише для перевірки pipeline,
+чітко позначений як DEMO MODE (розділ 40 ТЗ), doки реальний датасет не з'явиться.

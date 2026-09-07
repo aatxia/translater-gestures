@@ -79,8 +79,8 @@ usage. Dataset pipeline and model training are not implemented yet
 | 4 | Camera | ✅ Done |
 | 5 | WebSocket | ✅ Done |
 | 6 | MediaPipe preprocessing | ✅ Done |
-| 7 | Landmark extraction | ⏳ Next |
-| 8 | Dataset pipeline | ⏳ |
+| 7 | Landmark extraction | ✅ Done |
+| 8 | Dataset pipeline | ⏳ Next |
 | 9 | Baseline ML model | ⏳ |
 | 10 | Real-time inference | ⏳ |
 | 11 | Sign → gloss | ⏳ |

@@ -7,6 +7,7 @@ truth the rest of the backend imports from.
 """
 from __future__ import annotations
 
+import sys
 from functools import lru_cache
 from pathlib import Path
 
@@ -14,6 +15,12 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Repo root is three levels up from this file: backend/app/core/config.py -> repo root
 REPO_ROOT = Path(__file__).resolve().parents[3]
+
+# Make the sibling `ml/` package importable from anywhere in the backend
+# (e.g. `from ml.preprocessing.landmarks import ...` in websocket/handler.py),
+# regardless of the working directory uvicorn/pytest was launched from.
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
 
 class Settings(BaseSettings):
@@ -37,6 +44,9 @@ class Settings(BaseSettings):
     ws_max_message_size_bytes: int = 2_097_152
     ws_max_fps: int = 15
     ws_heartbeat_interval_sec: int = 30
+
+    # --- MediaPipe (Phase 6-7 CV pipeline) ---
+    mediapipe_models_dir: Path = REPO_ROOT / "models" / "mediapipe"
 
     # --- ML model ---
     model_type: str = "lstm"
