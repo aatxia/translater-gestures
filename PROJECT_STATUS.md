@@ -1,6 +1,6 @@
 # PROJECT STATUS
 
-Останнє оновлення: Phase 5 complete.
+Останнє оновлення: Phase 6 complete.
 
 ## Що вже є
 
@@ -172,10 +172,49 @@
 **Known limitations:** кадри з камери зараз реально шлються на backend, але backend поки завжди
 відповідає "ML pipeline not implemented" — це очікувано і зникне в Phase 9-10.
 
+## PHASE 6 — MediaPipe preprocessing (COMPLETE)
+
+Реалізовано робочий CV preprocessing pipeline (`ml/preprocessing/`), використовуючи сучасний
+**MediaPipe Tasks API** (`HandLandmarker`/`PoseLandmarker`/`FaceLandmarker`) — стара
+`mp.solutions` більше не постачається у поточних релізах mediapipe (перевірено: pip встановив
+mediapipe 1.0.1, `mp.solutions` відсутній).
+
+- `video_reader.py` — декодування base64 JPEG (з WebSocket `frame` message, включно з
+  `data:image/jpeg;base64,...` префіксом від `canvas.toDataURL()`) у BGR numpy-масив; плюс
+  читання відеофайлів кадр-за-кадром для майбутнього dataset pipeline (Phase 8).
+- `landmarks.py` — `LandmarkExtractor` з lazy-завантаженням лише увімкнених за `FeatureToggles`
+  детекторів (hands/pose/face, розділ 9 ТЗ), чесний `ModelNotFoundError` з інструкцією, якщо
+  `.task` модель не завантажена. Жодних fake-детекцій: якщо MediaPipe не бачить руку/позу/обличчя
+  в кадрі — відповідне поле `None`, а не вигадане значення.
+- `normalization.py` — нормалізація координат відносно тіла: hand center = wrist, pose center =
+  середина плечей (індекси 11/12) + масштаб = ширина плечей (invariant до відстані до камери,
+  перевірено тестом), face center = центроїд. `normalize_frame()` дає fixed-shape вивід із нулями
+  там, де модальність відсутня, ПЛЮС окремий `present` dict, щоб відрізнити "0,0,0" від
+  "не виявлено".
+- `augmentation.py` — geometric/temporal аугментації для тренування (rotate/scale/translate/
+  gaussian noise/temporal frame dropout), детерміновані через seeded `numpy.random.Generator`.
+- `scripts/download_mediapipe_models.sh` — завантажує `.task` бандли (Apache 2.0, від Google) з
+  офіційного джерела, з fallback на GitHub-дзеркало для hand/face, якщо `storage.googleapis.com`
+  заблоковано в мережі.
+
+**Перевірено наживо (справжній MediaPipe, не мок):**
+- `hand_landmarker.task` (7.8MB) і `face_landmarker.task` (3.7MB) реально завантажені й
+  перевірені: детектори завантажуються, `.detect()` на порожньому/синтетичному кадрі чесно
+  повертає 0 виявлень (не fabricated result).
+- `pose_landmarker.task` **не вдалося завантажити в цій пісочниці** (офіційний Google Storage
+  заблокований мережевими правилами середовища, і для pose дзеркала поки не існує) — тест на
+  pose коректно `SKIPPED` з чіткою причиною, а не falsely passed. **На твоїй машині/в Colab з
+  нормальним доступом до інтернету офіційний URL спрацює без проблем.**
+- `pytest`: 22 passed, 1 skipped (pose, з задокументованої причини), `ruff check` — чисто.
+
+**Known limitations:** pose-детекція не верифікована наживо в цій пісочниці (лише hands/face);
+код ідентичний для всіх трьох модальностей, тож ризик низький, але варто перевірити на своїй
+машині після `scripts/download_mediapipe_models.sh`.
+
 ## Наступна фаза
 
-**PHASE 6 — MediaPipe preprocessing**: `ml/preprocessing/{video_reader,landmarks,normalization,
-augmentation}.py` — прийом base64 JPEG кадру з WS `frame` message, детекція hands/pose/face
-через MediaPipe, нормалізація координат відносно тіла/плечей/масштабу. Це перший крок, після
-якого backend зможе відповідати реальними landmark-даними замість завжди "not implemented"
-(сам prediction ще чекає Phase 9-10, бо потребує навченої моделі).
+**PHASE 7 — Landmark extraction**: `ml/features/{hands,pose,face}.py` — побудова фіксованого
+feature-вектора з `NormalizedFrame` для кожної модальності окремо (з урахуванням `configs/
+model.yaml` feature toggles), і підключення в `backend/websocket/handler.py` замість порожнього
+`landmark_sequence=[]` — щоб WS відповідав реальною кількістю виявлених рук/пози/обличчя
+(підготовка до debug mode, розділ 41), хоча сам prediction все ще чекає Phase 9-10.

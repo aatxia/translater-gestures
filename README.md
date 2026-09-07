@@ -62,9 +62,12 @@ Frontend буде доступний на `http://localhost:3000`.
 
 ### ML — dataset, training, inference
 
-Буде описано в Phase 8+ (`ml/README.md`), коли з'явиться dataset pipeline і training script.
-Тренування моделей передбачається на Google Colab (GPU), checkpoint переноситься в
-`models/checkpoints/` і використовується локально через `SignRecognizer`.
+Preprocessing pipeline (MediaPipe landmark extraction, normalization,
+augmentation) is ready — see [`ml/README.md`](ml/README.md) for setup and
+usage. Dataset pipeline and model training are not implemented yet
+(see `PROJECT_STATUS.md`). Тренування моделей передбачається на Google Colab
+(GPU), checkpoint переноситься в `models/checkpoints/` і використовується
+локально через `SignRecognizer`.
 
 ## Roadmap (Phases)
 
@@ -75,8 +78,8 @@ Frontend буде доступний на `http://localhost:3000`.
 | 3 | Frontend Next.js | ✅ Done |
 | 4 | Camera | ✅ Done |
 | 5 | WebSocket | ✅ Done |
-| 6 | MediaPipe preprocessing | ⏳ Next |
-| 7 | Landmark extraction | ⏳ |
+| 6 | MediaPipe preprocessing | ✅ Done |
+| 7 | Landmark extraction | ⏳ Next |
 | 8 | Dataset pipeline | ⏳ |
 | 9 | Baseline ML model | ⏳ |
 | 10 | Real-time inference | ⏳ |

@@ -4,7 +4,8 @@
 !models/checkpoints/.gitkeep
 # --- Docker ---
 # --- Env / secrets ---
-# --- ML artifacts (large binary, do not commit) ---
+# --- MediaPipe pretrained models (downloaded, not trained by us) ---
+models/mediapipe/*.task
 # --- Node / Frontend ---
 # --- OS / editor ---
 # --- Python / Backend / ML ---
