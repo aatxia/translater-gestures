@@ -159,8 +159,30 @@ plumbing works end-to-end, it says nothing about real-world recognition.
 Real training needs a real annotated УЖМ dataset (still not available as of
 Phase 9, see `PROJECT_STATUS.md`).
 
-## Inference
+## Inference (Phase 10)
 
-Not implemented yet — see `PROJECT_STATUS.md` for the phase plan
-(Phase 10: real-time inference, wiring a trained checkpoint into the backend's
-`InferenceService`).
+```
+ml/inference/
+└── recognizer.py         # SignRecognizer: loads a checkpoint, predicts from a full window
+```
+
+Framework-agnostic (no FastAPI import) so it's testable standalone — the same
+class powers `backend/app/services/lstm_inference_service.py`, which just
+adapts its output to the app's `InferenceService`/`SignPrediction` contract.
+The WebSocket handler (`backend/websocket/handler.py`) buffers each
+connection's incoming feature vectors into a sliding window sized to the
+checkpoint's `sequence_length`; once full, every subsequent frame runs a real
+prediction (there's no sign-boundary detection yet, so every prediction is
+interim — `is_final=False` — never `"final_prediction"`). A `demo_mode`
+checkpoint's predicted text is prefixed `"[DEMO] "` so it can never be
+mistaken for real УЖМ recognition, and `/health`'s `ml_pipeline_status`
+reports `"demo_mode"` (vs `"not_implemented"` with no checkpoint, or
+`"ready"` once trained on real data).
+
+```python
+from ml.inference.recognizer import SignRecognizer
+
+recognizer = SignRecognizer("models/checkpoints/baseline/latest.pt", device="cpu")
+result = recognizer.predict(feature_sequence)  # exactly recognizer.sequence_length frames
+print(result.gloss, result.confidence, result.is_demo_mode)
+```

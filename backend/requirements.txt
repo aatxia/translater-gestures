@@ -1,6 +1,10 @@
-# Backend imports ml/ (websocket/handler.py -> ml.preprocessing.landmarks) directly,
-# so it needs the same CV/ML dependencies.
+# Backend imports ml/ directly (websocket/handler.py -> ml.preprocessing.landmarks,
+# app/services/lstm_inference_service.py -> ml.inference.recognizer), so it needs
+# the same CV/ML dependencies, plus torch to actually run a trained checkpoint
+# (Phase 9-10). See ml/requirements-training.txt for the Colab/GPU-wheel caveat
+# if you're setting this up in a notebook rather than a normal server deploy.
 -r ../ml/requirements.txt
+torch>=2.4,<3.0
 
 fastapi==0.115.0
 uvicorn[standard]==0.30.6

@@ -75,6 +75,15 @@ class Settings(BaseSettings):
     def cors_origins_list(self) -> list[str]:
         return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
 
+    @property
+    def model_checkpoint_path_resolved(self) -> Path:
+        """model_checkpoint_path is documented (.env.example) as relative to
+        the repo root, not the process's cwd -- uvicorn is commonly launched
+        from backend/, where a bare relative path would silently resolve to
+        the wrong (nonexistent) location. Mirrors mediapipe_models_dir."""
+        path = Path(self.model_checkpoint_path)
+        return path if path.is_absolute() else REPO_ROOT / path
+
 
 @lru_cache
 def get_settings() -> Settings:

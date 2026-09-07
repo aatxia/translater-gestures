@@ -1,6 +1,6 @@
 # PROJECT STATUS
 
-Останнє оновлення: Phase 9 complete.
+Останнє оновлення: Phase 10 complete.
 
 ## Що вже є
 
@@ -356,13 +356,72 @@ split→train→checkpoint pipeline коректний end-to-end. Реальн�
 датасет (Phase 8: досі не існує публічно). `ml/evaluation/` (held-out test-спліт, метрики) — не
 в скоупі Phase 9, лишається на майбутнє.
 
+## PHASE 10 — Real-time inference (COMPLETE)
+
+Натренований checkpoint (Phase 9) тепер реально керує WebSocket-відповіддю замість чесної
+заглушки:
+
+- `ml/inference/recognizer.py` — `SignRecognizer` (framework-agnostic, без FastAPI-імпортів):
+  завантажує checkpoint один раз, реконструює `LSTMSignClassifier` з `model_config`, тримає
+  `label_to_index`⁻¹ мапу. `predict()` приймає рівно `sequence_length` feature-векторів (інакше
+  чітка `ValueError` — краще явна відмова, ніж мовчки згодувати моделі щось інше, ніж вона
+  бачила на тренуванні).
+- `backend/app/services/lstm_inference_service.py` — тонкий адаптер: `LSTMSignRecognizer`
+  реалізує `InferenceService` (Phase 2 інтерфейс), обгортаючи `SignRecognizer`. Для
+  `demo_mode` checkpoint префіксує текст `"[DEMO] "` — щоб демо-передбачення ніколи не
+  сплутати з реальним розпізнаванням УЖМ.
+- `backend/app/services/inference_provider.py` — процесно-глобальний lazy-loader
+  (`get_inference_service()`), той самий патерн кешування успіху/невдачі, що і
+  `_get_landmark_extractor()` у WebSocket handler'і; спільний для `/health` і WS, щоб checkpoint
+  не завантажувався двічі.
+- `backend/websocket/handler.py` — кожне з'єднання тримає власний sliding window
+  (`collections.deque(maxlen=sequence_length)`) feature-векторів. Поки вікно не заповнене —
+  чесне `{"type":"error","message":"Buffering: X/Y frames..."}`; після заповнення — реальний
+  `PredictionMessage` щокадру (sliding window). Сегментації меж жесту ще нема, тож усі
+  передбачення позначені `is_final=false` (`"prediction"`, ніколи `"final_prediction"`) — чесно,
+  а не вигадана впевненість.
+- `backend/app/api/routes/health.py` — `ml_pipeline_status`: `not_implemented` (checkpoint не
+  знайдено) / `demo_mode` (checkpoint є, але `demo_mode=true`) / `ready` (реальні дані, коли
+  з'являться).
+- `backend/app/core/config.py` — новий `model_checkpoint_path_resolved` (як і
+  `mediapipe_models_dir`): виправлено приховану проблему — `MODEL_CHECKPOINT_PATH` у
+  `.env.example` завжди був відносним шляхом без прив'язки до `REPO_ROOT`, тож при запуску
+  `uvicorn` з `backend/` (як і документує README) резолвився б у неіснуючий
+  `backend/models/checkpoints/...`. Раніше це не спливало, бо checkpoint ніде не завантажувався.
+- `backend/requirements.txt` — додано `torch` (backend тепер реально виконує forward pass, не
+  лише CV pipeline).
+- `docker/backend.Dockerfile` — додано системні бібліотеки (`libgl1`/`libglib2.0-0`/`libegl1`/
+  `libgles2`), яких потребує mediapipe для `dlopen()` нативної бібліотеки; `python:3.12-slim` їх
+  не має, і без цього контейнер впав би з `OSError: libEGL.so.1: cannot open shared object
+  file` при першому реальному кадрі — знайдено й виправлено саме зараз, бо Phase 10 вперше
+  реально прогнав inference у контейнеризованому сценарії.
+
+**Перевірено наживо:**
+- `pytest`: `ml/` — 73 passed (додано `ml/tests/test_recognizer.py`); `backend/` — 19 passed
+  (додано `test_lstm_inference_service.py`, `test_websocket_inference.py` — WS-рівень з
+  замоканим landmark extractor, щоб ізолювати НОВУ buffering/inference-логіку від Phase 6-7 CV
+  pipeline, який має власне покриття; `test_health.py` — новий `demo_mode` кейс). `ruff check` —
+  чисто в обох пакетах.
+- **Реальний E2E, не мок**: натреновано demo-checkpoint → піднято `uvicorn` з
+  `MODEL_CHECKPOINT_PATH` на нього → `GET /health` → `ml_pipeline_status: "demo_mode"` →
+  живий `websockets`-клієнт шле 35 РЕАЛЬНИХ JPEG-кадрів через справжній MediaPipe (не мок) →
+  кадри 1-31: `Buffering: N/32 frames...`, кадр 32+: реальний
+  `{"type":"prediction","text":"[DEMO] DYAKUYU","confidence":0.229...,"is_final":false}`,
+  стабільно на наступних кадрах (sliding window).
+
+**Known limitations:** немає сегментації меж жесту (коли один жест закінчився і почався
+наступний) — модель просто класифікує поточне вікно щокадру, тому `is_final` завжди `false`.
+Реальна точність розпізнавання УЖМ = 0, поки нема реального датасету (Phase 8) і реального
+тренування (Phase 9 на ньому). `model_type` підтримує лише `lstm` — transformer/video_jepa
+залишаються заявленими в конфігу, але нереалізованими (чесна `NotImplementedError`, не
+мовчазний fallback).
+
 ## Наступна фаза
 
-**PHASE 10 — Real-time inference**: підключити збережений checkpoint (`models/checkpoints/`) у
-`backend/app/services/inference_service.py` — конкретна реалізація `InferenceService`
-(`LSTMSignRecognizer` чи подібне), яка завантажує checkpoint, тримає sliding window
-feature-векторів (`model_sequence_length` кадрів) і повертає `SignPrediction`. WebSocket handler
-(Phase 5/7) перемикається з чесної "not implemented" помилки на реальний (хай і demo-якості,
-поки нема реального датасету) prediction. `/health` `ml_pipeline_status` міняється з
-`not_implemented` на `demo_mode`/`ready` залежно від того, чи checkpoint позначений
-`demo_mode`.
+**PHASE 11 (орієнтовно) — Gloss-sequence aggregation**: наразі WebSocket віддає сирий
+per-frame prediction (одне слово на ковзне вікно, без меж жесту). Перш ніж
+`backend/app/services/translation_service.py::gloss_to_text()` (заявлено як Phase 12 у власному
+docstring) матиме що обробляти, потрібен проміжний шар: тимчасове згладжування/дедублікація
+послідовних однакових передбачень, поріг confidence, і базова евристика "жест закінчився" —
+щоб перетворити потік `is_final=false` prediction-повідомлень на реальну послідовність gloss
+(`["I", "WANT", "WATER"]`), яку Phase 12 зможе перекласти в речення.
