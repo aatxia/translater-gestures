@@ -11,19 +11,40 @@ Security (section 36):
 
 CV pipeline (Phase 6-7): each valid frame is decoded and run through the
 real MediaPipe landmark extractor + normalization + feature vector builder.
-This is genuine landmark extraction, not a stub -- but there is still no
-trained temporal model (Phase 9-10), so the response is an honest error that
-now also reports which modalities were actually detected, never a
-fabricated sign prediction (section 40: "NO FAKE AI").
+
+Inference (Phase 9-10): feature vectors are buffered into a sliding window
+(per connection); once the window is full, it's run through a trained
+LSTM checkpoint if one exists. If no checkpoint has been trained yet, the
+response stays an honest error reporting which modalities were actually
+detected -- never a fabricated sign prediction (section 40: "NO FAKE AI").
+
+Gloss aggregation (Phase 11): raw per-frame predictions are debounced by
+GlossSequenceAggregator (ml/inference/aggregator.py) into a stable gloss
+sequence -- most frames are still interim ("prediction", is_final=False);
+a "final_prediction" (is_final=True) fires only when the same gloss has
+been predicted `WS_GLOSS_STABILITY_FRAMES` times in a row above
+`WS_GLOSS_CONFIDENCE_THRESHOLD`.
 """
 from __future__ import annotations
 
 import asyncio
 import json
 import time
+from collections import deque
 
+from app.core.config import get_settings
+from app.core.logging import get_logger
+from app.services.inference_provider import get_inference_service
+from app.services.inference_service import MLNotReadyError
 from fastapi import WebSocket, WebSocketDisconnect
-from ml.features.feature_vector import FeatureConfig, build_feature_vector, feature_vector_size
+from starlette.websockets import WebSocketState
+
+from ml.features.feature_vector import (
+    FeatureConfig,
+    build_feature_vector,
+    feature_vector_size,
+)
+from ml.inference.aggregator import GlossSequenceAggregator
 from ml.preprocessing.landmarks import (
     FeatureToggles,
     LandmarkExtractor,
@@ -31,12 +52,14 @@ from ml.preprocessing.landmarks import (
 )
 from ml.preprocessing.normalization import normalize_frame
 from ml.preprocessing.video_reader import FrameDecodeError, decode_base64_frame
-from starlette.websockets import WebSocketState
-
-from app.core.config import get_settings
-from app.core.logging import get_logger
 from websocket.manager import connection_manager
-from websocket.protocol import ConnectionMessage, ErrorMessage, ProtocolError, parse_client_message
+from websocket.protocol import (
+    ConnectionMessage,
+    ErrorMessage,
+    PredictionMessage,
+    ProtocolError,
+    parse_client_message,
+)
 
 logger = get_logger(__name__)
 
@@ -79,6 +102,15 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
     last_frame_at = 0.0
     frames_received = 0
     already_closed = False
+    # Per-connection: an isolated sliding window per signer, sized to the
+    # loaded checkpoint's sequence_length once (if) inference is ready.
+    feature_buffer: deque[list[float]] | None = None
+    # Per-connection: debounces the raw per-frame prediction stream into a
+    # stable gloss sequence (Phase 11 -- see ml/inference/aggregator.py).
+    gloss_aggregator = GlossSequenceAggregator(
+        stability_frames=settings.ws_gloss_stability_frames,
+        confidence_threshold=settings.ws_gloss_confidence_threshold,
+    )
 
     try:
         while True:
@@ -156,23 +188,68 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
             )
             feature_vector = build_feature_vector(normalized, feature_config)
 
-            # Real landmarks ARE extracted now (Phase 6-7) -- but there is still
-            # no trained temporal model (Phase 9-10), so this stays an honest
-            # error, now with real detection info instead of a fabricated sign.
+            inference_service = get_inference_service()
+            if not inference_service.is_ready():
+                # Real landmarks ARE extracted (Phase 6-7) -- but no trained
+                # checkpoint is loaded (Phase 9-10 not run, or not found at
+                # settings.model_checkpoint_path_resolved), so this stays an
+                # honest error with real detection info, never a fabricated sign.
+                await websocket.send_json(
+                    ErrorMessage(
+                        message=(
+                            "Sign-recognition ML pipeline is not implemented yet "
+                            "(Phase 9-10: no trained checkpoint found). Landmarks were "
+                            f"extracted: left_hand={normalized.present['left_hand']}, "
+                            f"right_hand={normalized.present['right_hand']}, "
+                            f"pose={normalized.present['pose']}, "
+                            f"face={normalized.present['face']} "
+                            f"(feature vector size: {feature_vector.shape[0]}/"
+                            f"{feature_vector_size(feature_config)})."
+                        )
+                    ).model_dump()
+                )
+                continue
+
+            sequence_length = inference_service.sequence_length
+            if feature_buffer is None:
+                feature_buffer = deque(maxlen=sequence_length)
+            feature_buffer.append(feature_vector.tolist())
+
+            if len(feature_buffer) < sequence_length:
+                await websocket.send_json(
+                    ErrorMessage(
+                        message=(
+                            f"Buffering: {len(feature_buffer)}/{sequence_length} frames "
+                            "collected before the first prediction."
+                        )
+                    ).model_dump()
+                )
+                continue
+
+            try:
+                # predict() runs a real (if small) forward pass -- keep it off
+                # the event loop, same reasoning as extractor.extract above.
+                prediction = await asyncio.to_thread(inference_service.predict, list(feature_buffer))
+            except MLNotReadyError as exc:
+                await websocket.send_json(ErrorMessage(message=str(exc)).model_dump())
+                continue
+
+            confirmed = gloss_aggregator.update(prediction.sign, prediction.confidence)
             await websocket.send_json(
-                ErrorMessage(
-                    message=(
-                        "Sign-recognition ML pipeline is not implemented yet "
-                        "(Phase 9-10: no trained temporal model). Landmarks were "
-                        f"extracted: left_hand={normalized.present['left_hand']}, "
-                        f"right_hand={normalized.present['right_hand']}, "
-                        f"pose={normalized.present['pose']}, "
-                        f"face={normalized.present['face']} "
-                        f"(feature vector size: {feature_vector.shape[0]}/"
-                        f"{feature_vector_size(feature_config)})."
-                    )
+                PredictionMessage(
+                    type="final_prediction" if confirmed else "prediction",
+                    text=prediction.text,
+                    confidence=prediction.confidence,
+                    is_final=confirmed,
                 ).model_dump()
             )
+            if confirmed:
+                logger.info(
+                    "WebSocket id=%s confirmed gloss #%s (sequence so far: %s)",
+                    conn_id,
+                    len(gloss_aggregator.sequence),
+                    gloss_aggregator.sequence,
+                )
 
             if frames_received % 30 == 0:
                 logger.info(

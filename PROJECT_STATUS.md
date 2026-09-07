@@ -1,6 +1,6 @@
 # PROJECT STATUS
 
-Останнє оновлення: Phase 7 complete.
+Останнє оновлення: Phase 11 complete.
 
 ## Що вже є
 
@@ -249,11 +249,215 @@ Feature-вектори та повне підключення реального
 `scripts/download_mediapipe_models.sh` (де офіційний URL не заблокований) все запрацює з усіма
 трьома модальностями без додаткових змін.
 
+## PHASE 8 — Dataset pipeline (COMPLETE)
+
+**Дослідження реального датасету УЖМ (перед кодом, як і планувалось):** перевірено три основні
+реєстри sign-language датасетів — `sign-language-processing/datasets` (HuggingFace/TFDS),
+PyPI `sign-language-datasets`, `SignLanguage-Dataset-Hub` — **жоден не містить УЖМ**. Знайдено
+один реальний, свіжий (травень 2026) ресурс — **UkrSL** ("Towards a Ukrainian Continuous Sign
+Language Dataset", UNLP 2026, Sobetskyi/Kosse/Kyslyi/Savchenko): 1456 кліпів (~2 години) з 6
+відео Суспільного мовлення. Але це **continuous signing**, вирівняний до українського тексту
+переклад дикторської мови (не ізольовані жести з gloss-міткою для класифікації), сигнерів
+ймовірно лише кілька (перекладачі каналу) — не той рівень signer-різноманіття, що потрібен для
+signer-independent split. Посилання на завантаження/ліцензію **не вдалось перевірити** —
+`aclanthology.org` заблокований мережевою політикою цього sandbox-середовища. Висновок:
+готового isolated-sign датасету УЖМ з `signer_id` для класифікації публічно не існує — це
+підтверджена відсутність ресурсу, а не пропущений пошук.
+
+Створено інфраструктуру датасету (`ml/datasets/`, `scripts/`, `docs/dataset_format.md`):
+
+- `ml/datasets/annotation.py` — `SampleAnnotation` (sample_id/clip_path/signer_id/gloss/
+  start_frame/end_frame/fps/source, розділ 10), JSONL load/write з чіткими помилками (файл +
+  рядок) на некоректний рядок або дублікат `sample_id` — жоден поганий рядок не пропускається
+  мовчки.
+- `ml/datasets/split.py` — `signer_independent_split()` (розділ 11): призначає **цілого
+  сигнера**, а не окремий семпл, в один зі spliits (greedy group-balancing за ratio,
+  детерміновано за `seed`); кидає явну помилку, якщо унікальних сигнерів менше, ніж потрібно
+  спліттів, замість мовчазного порожнього спліту.
+- `scripts/create_dataset_split.py` — CLI, пише `data/splits/{train,val,test}.txt` +
+  `split_manifest.json` (ratio/seed/signer→split, для аудиту).
+- `ml/datasets/synthetic.py` (**DEMO MODE ONLY**) — генерує невеликий повністю штучний датасет
+  (6 фейкових сигнерів × 5 gloss-міток), псевдовипадкові feature-послідовності з
+  класо-залежним зсувом (НЕ з реального відео/MediaPipe), кожен семпл позначений
+  `source="demo_synthetic"`.
+- `ml/datasets/dataset.py::load_feature_sequence()` — завантажує `.npy` для
+  `source="demo_synthetic"`; для будь-якого іншого `source` **явно кидає
+  `NotImplementedError`** (реальні відео поки нема як декодувати — Phase 9 підключить
+  `ml/preprocessing`+`ml/features` до цього шляху, коли з'явиться реальний датасет) — жодної
+  фейкової підтримки.
+- `scripts/generate_demo_dataset.py` — CLI-обгортка, друкує явне попередження
+  "[DEMO MODE] ... This is NOT real Ukrainian Sign Language data".
+- `docs/dataset_format.md` — повний опис формату анотацій, signer-independent split, і чому
+  зараз лише DEMO MODE.
+- `.gitignore` — `data/annotations/*` і `data/splits/*` тепер ігноруються (як і
+  `data/raw`/`data/processed`): вміст завжди або згенерований локально, або з зовнішнього
+  датасету, і не повинен коммітитись як частина репозиторію.
+
+**Перевірено наживо:**
+- `pytest` (`ml/`): 54 passed, 4 skipped (ті самі pose-skip з Phase 6, з задокументованої
+  причини — не пов'язано з Phase 8).
+- Живий E2E через CLI: `generate_demo_dataset.py` → 90 семплів (6 сигнерів × 5 gloss × 3 takes),
+  `create_dataset_split.py` на них → `train: 60 (4 сигнери), val: 15 (1 сигнер), test: 15
+  (1 сигнер)` — рівно 0.7/0.15/0.15 при 6 рівних сигнерах, жоден сигнер не перетнув спліти.
+
+**Known limitations:** synthetic-датасет існує лише для перевірки інфраструктури — модель,
+натренована на ньому, не розпізнає жодного реального жесту УЖМ. Реальний датасет лишається
+зовнішньою залежністю; `load_feature_sequence()` для реального відео свідомо не реалізовано
+(Phase 9).
+
+## PHASE 9 — Baseline model training (COMPLETE)
+
+Реалізовано повний тренувальний pipeline (`ml/models/`, `ml/training/`), однаково запускний
+локально й у Google Colab, без Colab-специфічних хаків:
+
+- `ml/models/lstm.py` — `LSTMSignClassifier`: стековий LSTM (`nn.LSTM`, `batch_first`) над
+  feature-вектором кадру (Phase 7) + лінійний класифікатор над фінальним hidden state.
+  Єдина реалізована архітектура на Phase 9 (`configs/model.yaml` лишає місце для
+  transformer/video_jepa на майбутнє — `ml/training/config.py` **явно кидає
+  `NotImplementedError`** для будь-якого нереалізованого `model.type`, а не мовчки навчає
+  щось інше).
+- `ml/training/config.py` — `load_training_config()` читає `configs/model.yaml`
+  (`model.type`/`sequence_length`, `features.*`, новий розділ `training:` з
+  hidden_size/num_layers/epochs/batch_size/learning_rate) в один `TrainingConfig` — єдине
+  джерело гіперпараметрів експерименту (розділ 31), CLI-флаги лише перевизначають конкретний
+  запуск.
+- `ml/training/dataset.py` — `SignSequenceDataset` (torch `Dataset`): бере `SampleAnnotation` +
+  `ml.datasets.dataset.load_feature_sequence()`, паддить/обрізає до фіксованої довжини
+  (`pad_or_truncate`, нулями — узгоджено з тим, як `normalize_frame()` вже позначає
+  "не виявлено").
+- `ml/training/train.py` — CLI: signer-independent split (Phase 8) на train/val/test →
+  тренувальний цикл (Adam, cross-entropy) → оцінка на val щоепохи → зберігає **найкращий**
+  checkpoint у `models/checkpoints/<experiment-name>/latest.pt` (gitignored — build artifact,
+  не вихідний код). Checkpoint містить усе, що знадобиться Phase 10 inference: ваги моделі,
+  `model_config`/`feature_config`/`sequence_length`, мапу `label_to_index`, і — критично для
+  правила "НЕ РОБИ FAKE AI" — `source_tags` + `demo_mode`, щоб checkpoint, натренований лише
+  на `demo_synthetic`, ніколи не можна було сплутати з таким, що розпізнає реальну УЖМ.
+  `test`-спліт рахується (для майбутнього `ml/evaluation/`), але цим скриптом не
+  використовується — про це чесно пишеться в консоль.
+- `ml/requirements-training.txt` — torch окремо від `ml/requirements.txt` (щоб backend/CV
+  pipeline не тягнув важку GPU/CPU-специфічну залежність); заголовок файлу explicитно
+  попереджає: **у Colab torch вже стоїть з GPU — не перевстановлювати цим файлом**, інакше
+  втратиш GPU-доступ.
+
+**Перевірено наживо:**
+- `pytest` (`ml/`): 66 passed, 4 skipped (ті самі pose-skip з Phase 6). `ruff check` — чисто.
+- **Реальний E2E через CLI** (не мок): `scripts/generate_demo_dataset.py` (180 семплів, 6
+  сигнерів × 5 gloss × 6 takes) → `python -m ml.training.train` з кореня репо → live-навчання
+  на CPU (torch 2.14, встановлено з дефолтного PyPI, бо `download.pytorch.org` заблоковано
+  мережею sandbox — на твоїй машині/в Colab звичайний `pip install torch` спрацює так само) →
+  15 епох, val_accuracy сходиться до 1.0 (очікувано: demo-класи навмисно тривіально
+  розділювані), checkpoint збережено і перевірено `torch.load()` — усі поля (`model_type`,
+  `model_config`, `feature_config`, `sequence_length`, `label_to_index`, `source_tags`,
+  `demo_mode=True`, `val_accuracy`, `trained_at`) присутні й коректні.
+
+**Known limitations:** val_accuracy=1.0 на demo-датасеті нічого не каже про реальну точність
+розпізнавання УЖМ — це навмисно тривіальні синтетичні класи, лише перевірка, що
+split→train→checkpoint pipeline коректний end-to-end. Реальне тренування чекає на реальний
+датасет (Phase 8: досі не існує публічно). `ml/evaluation/` (held-out test-спліт, метрики) — не
+в скоупі Phase 9, лишається на майбутнє.
+
+## PHASE 10 — Real-time inference (COMPLETE)
+
+Натренований checkpoint (Phase 9) тепер реально керує WebSocket-відповіддю замість чесної
+заглушки:
+
+- `ml/inference/recognizer.py` — `SignRecognizer` (framework-agnostic, без FastAPI-імпортів):
+  завантажує checkpoint один раз, реконструює `LSTMSignClassifier` з `model_config`, тримає
+  `label_to_index`⁻¹ мапу. `predict()` приймає рівно `sequence_length` feature-векторів (інакше
+  чітка `ValueError` — краще явна відмова, ніж мовчки згодувати моделі щось інше, ніж вона
+  бачила на тренуванні).
+- `backend/app/services/lstm_inference_service.py` — тонкий адаптер: `LSTMSignRecognizer`
+  реалізує `InferenceService` (Phase 2 інтерфейс), обгортаючи `SignRecognizer`. Для
+  `demo_mode` checkpoint префіксує текст `"[DEMO] "` — щоб демо-передбачення ніколи не
+  сплутати з реальним розпізнаванням УЖМ.
+- `backend/app/services/inference_provider.py` — процесно-глобальний lazy-loader
+  (`get_inference_service()`), той самий патерн кешування успіху/невдачі, що і
+  `_get_landmark_extractor()` у WebSocket handler'і; спільний для `/health` і WS, щоб checkpoint
+  не завантажувався двічі.
+- `backend/websocket/handler.py` — кожне з'єднання тримає власний sliding window
+  (`collections.deque(maxlen=sequence_length)`) feature-векторів. Поки вікно не заповнене —
+  чесне `{"type":"error","message":"Buffering: X/Y frames..."}`; після заповнення — реальний
+  `PredictionMessage` щокадру (sliding window). Сегментації меж жесту ще нема, тож усі
+  передбачення позначені `is_final=false` (`"prediction"`, ніколи `"final_prediction"`) — чесно,
+  а не вигадана впевненість.
+- `backend/app/api/routes/health.py` — `ml_pipeline_status`: `not_implemented` (checkpoint не
+  знайдено) / `demo_mode` (checkpoint є, але `demo_mode=true`) / `ready` (реальні дані, коли
+  з'являться).
+- `backend/app/core/config.py` — новий `model_checkpoint_path_resolved` (як і
+  `mediapipe_models_dir`): виправлено приховану проблему — `MODEL_CHECKPOINT_PATH` у
+  `.env.example` завжди був відносним шляхом без прив'язки до `REPO_ROOT`, тож при запуску
+  `uvicorn` з `backend/` (як і документує README) резолвився б у неіснуючий
+  `backend/models/checkpoints/...`. Раніше це не спливало, бо checkpoint ніде не завантажувався.
+- `backend/requirements.txt` — додано `torch` (backend тепер реально виконує forward pass, не
+  лише CV pipeline).
+- `docker/backend.Dockerfile` — додано системні бібліотеки (`libgl1`/`libglib2.0-0`/`libegl1`/
+  `libgles2`), яких потребує mediapipe для `dlopen()` нативної бібліотеки; `python:3.12-slim` їх
+  не має, і без цього контейнер впав би з `OSError: libEGL.so.1: cannot open shared object
+  file` при першому реальному кадрі — знайдено й виправлено саме зараз, бо Phase 10 вперше
+  реально прогнав inference у контейнеризованому сценарії.
+
+**Перевірено наживо:**
+- `pytest`: `ml/` — 73 passed (додано `ml/tests/test_recognizer.py`); `backend/` — 19 passed
+  (додано `test_lstm_inference_service.py`, `test_websocket_inference.py` — WS-рівень з
+  замоканим landmark extractor, щоб ізолювати НОВУ buffering/inference-логіку від Phase 6-7 CV
+  pipeline, який має власне покриття; `test_health.py` — новий `demo_mode` кейс). `ruff check` —
+  чисто в обох пакетах.
+- **Реальний E2E, не мок**: натреновано demo-checkpoint → піднято `uvicorn` з
+  `MODEL_CHECKPOINT_PATH` на нього → `GET /health` → `ml_pipeline_status: "demo_mode"` →
+  живий `websockets`-клієнт шле 35 РЕАЛЬНИХ JPEG-кадрів через справжній MediaPipe (не мок) →
+  кадри 1-31: `Buffering: N/32 frames...`, кадр 32+: реальний
+  `{"type":"prediction","text":"[DEMO] DYAKUYU","confidence":0.229...,"is_final":false}`,
+  стабільно на наступних кадрах (sliding window).
+
+**Known limitations:** на момент Phase 10 не було сегментації меж жесту — модель просто
+класифікувала поточне вікно щокадру, тому `is_final` був завжди `false` (виправлено в Phase 11,
+нижче). Реальна точність розпізнавання УЖМ = 0, поки нема реального датасету (Phase 8) і
+реального тренування (Phase 9 на ньому). `model_type` підтримує лише `lstm` —
+transformer/video_jepa залишаються заявленими в конфігу, але нереалізованими (чесна
+`NotImplementedError`, не мовчазний fallback).
+
+## PHASE 11 — Gloss-sequence aggregation (COMPLETE)
+
+Сирий потік per-frame передбачень (Phase 10: одне слово щокадру, поки жест утримується) тепер
+перетворюється на стабільну послідовність gloss:
+
+- `ml/inference/aggregator.py` — `GlossSequenceAggregator`: **не** справжня лінгвістична
+  сегментація (без детекції фаз рух/утримання) — детермінований debounce-евристик, чесно
+  так і задокументований. Жест має бути передбачений `stability_frames` разів поспіль (вище
+  `confidence_threshold`), щоб бути "підтвердженим" і доданим у `.sequence`; той самий
+  утримуваний жест повторно не підтверджується. Низька впевненість перериває серію, а не
+  мовчки в ній рахується.
+- `backend/websocket/handler.py` — кожне з'єднання тримає власний `GlossSequenceAggregator`
+  (як і sliding window). Більшість кадрів лишаються `"prediction"` (`is_final=false`);
+  `"final_prediction"` (`is_final=true`) відправляється рівно один раз у момент підтвердження.
+  Підтверджена послідовність логується (мітки gloss — це метадані, не сирі дані, дозволено
+  правилом приватності).
+- `backend/app/core/config.py` + `.env.example` — `WS_GLOSS_STABILITY_FRAMES` (default 5),
+  `WS_GLOSS_CONFIDENCE_THRESHOLD` (default 0.5) — нічого не захардкожено.
+
+**Перевірено наживо:**
+- `pytest`: `ml/` — 81 passed (+8 `ml/tests/test_aggregator.py`: поріг стабільності,
+  неповторне підтвердження того самого жесту, переривання серії низькою впевненістю, reset);
+  `backend/` — 20 passed (+1 WS-рівня: `WS_GLOSS_CONFIDENCE_THRESHOLD=0` ізолює агрегацію від
+  калібрування впевненості recognizer'а, яке вже покрито в Phase 10 тестах). `ruff check` —
+  чисто.
+- **Реальний E2E, не мок**: натренований demo-checkpoint + живий `websockets`-клієнт через
+  справжній `uvicorn` (`WS_GLOSS_CONFIDENCE_THRESHOLD=0.0`, `stability_frames=5` за
+  замовчуванням): кадри 31-34 → `"prediction"` (`is_final=false`), кадр 35 (5-те однакове
+  передбачення поспіль) → рівно один `"final_prediction"` (`is_final=true`), кадри 36-39 →
+  знову `"prediction"` (жест утримується далі, повторно не підтверджується).
+
+**Known limitations:** евристика стабільності — не справжнє розпізнавання меж жестів
+(рух→утримання→рух); коротко утримані або швидко пов'язані жести можуть підтвердитись не там,
+де лінгвістично мала б бути межа. Послідовність `agg.sequence` наразі лише логується на
+бекенді, не передається клієнту окремим WS-повідомленням (client бачить лише
+`is_final=true`/`"final_prediction"` per-подію) — повний список поки не потрібен нікому, крім
+майбутнього Phase 12.
+
 ## Наступна фаза
 
-**PHASE 8 — Dataset pipeline**: `data/{raw,processed,annotations,splits}/`, `scripts/
-create_dataset_split.py` (signer-independent train/val/test split, розділ 11 ТЗ — суворо
-заборонено, щоб один signer_id був і в train, і в test), формат анотацій (розділ 10). Це
-зовнішня залежність — потрібен реальний відеодатасет УЖМ з розміткою signer_id, якого поки
-немає; buде створено інфраструктуру + synthetic/debug dataset лише для перевірки pipeline,
-чітко позначений як DEMO MODE (розділ 40 ТЗ), doки реальний датасет не з'явиться.
+**PHASE 12 — Gloss-to-text NLP**: `backend/app/services/translation_service.py::gloss_to_text()`
+(вже заявлено в docstring цього файлу як Phase 12) — rule-based переклад послідовності gloss
+(`GlossSequenceAggregator.sequence`, тепер реально накопичується в Phase 11) у природне
+українське речення (відмінки/число/рід/порядок слів, розділ 14/17 ТЗ), а не наївний
+`' '.join()`. `RuleBasedTranslationService` замінить `NotConfiguredTranslationService`.

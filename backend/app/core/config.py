@@ -45,6 +45,10 @@ class Settings(BaseSettings):
     ws_max_fps: int = 15
     ws_heartbeat_interval_sec: int = 30
 
+    # --- Gloss-sequence aggregation (Phase 11: ml/inference/aggregator.py) ---
+    ws_gloss_stability_frames: int = 5
+    ws_gloss_confidence_threshold: float = 0.5
+
     # --- MediaPipe (Phase 6-7 CV pipeline) ---
     mediapipe_models_dir: Path = REPO_ROOT / "models" / "mediapipe"
 
@@ -74,6 +78,15 @@ class Settings(BaseSettings):
     @property
     def cors_origins_list(self) -> list[str]:
         return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
+
+    @property
+    def model_checkpoint_path_resolved(self) -> Path:
+        """model_checkpoint_path is documented (.env.example) as relative to
+        the repo root, not the process's cwd -- uvicorn is commonly launched
+        from backend/, where a bare relative path would silently resolve to
+        the wrong (nonexistent) location. Mirrors mediapipe_models_dir."""
+        path = Path(self.model_checkpoint_path)
+        return path if path.is_absolute() else REPO_ROOT / path
 
 
 @lru_cache

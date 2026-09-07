@@ -88,8 +88,133 @@ Tests that need a real model file (`test_landmarks.py`) skip automatically
 with a clear reason if you haven't run the download script yet — they are
 not faked or hardcoded to pass.
 
-## Dataset / training / inference
+## Dataset pipeline (Phase 8)
 
-Not implemented yet — see `PROJECT_STATUS.md` for the phase plan
-(Phase 8: dataset pipeline, Phase 9: baseline model training,
-Phase 10: real-time inference).
+```
+ml/datasets/
+├── annotation.py        # SampleAnnotation schema + honest JSONL load/write
+├── split.py              # signer-independent train/val/test split (section 11)
+├── synthetic.py          # DEMO MODE ONLY: synthetic dataset generator
+└── dataset.py             # loads a sample's feature-vector sequence off disk
+```
+
+No public isolated-sign УЖМ (Ukrainian Sign Language) dataset with
+`signer_id` labeling could be found (see `PROJECT_STATUS.md`, Phase 8, for
+what was checked). Until a real one is available, `scripts/generate_demo_dataset.py`
+produces a small synthetic dataset (`source="demo_synthetic"`, never to be
+mistaken for real data) so the rest of the pipeline can be exercised
+end-to-end:
+
+```bash
+python scripts/generate_demo_dataset.py --output-dir data --seed 42
+python scripts/create_dataset_split.py \
+  --annotations data/annotations/demo_annotations.jsonl \
+  --output-dir data/splits
+```
+
+Full format details: `docs/dataset_format.md`.
+
+## Training (Phase 9)
+
+```
+ml/models/
+└── lstm.py              # LSTMSignClassifier: stacked LSTM + linear classifier head
+
+ml/training/
+├── config.py             # loads configs/model.yaml -> TrainingConfig
+├── dataset.py             # SignSequenceDataset: SampleAnnotation -> fixed-length tensor
+└── train.py               # CLI: split -> train -> evaluate -> save checkpoint
+```
+
+Install torch first (see `ml/requirements-training.txt` — **read its header
+before running pip install in Google Colab**, since Colab already has a
+GPU-matched torch preinstalled). Then, from the repo root:
+
+```bash
+pip install -r ml/requirements-training.txt   # local only, see note above for Colab
+python scripts/generate_demo_dataset.py --output-dir data --seed 42   # if you haven't already
+python -m ml.training.train --annotations data/annotations/demo_annotations.jsonl
+```
+
+Runs identically locally and in Colab (`!python -m ml.training.train ...`
+after cloning the repo there) — no Colab-specific paths or hacks. Hyperparameters
+(hidden size, epochs, batch size, learning rate) default to `configs/model.yaml`'s
+`training:` section and can be overridden per-run with CLI flags (`--epochs`,
+`--hidden-size`, ...) without editing the file.
+
+Training does a signer-independent split (`ml/datasets/split.py`, section 11)
+of whatever annotation file you point it at, trains on `train`, evaluates on
+`val` each epoch, and saves the best checkpoint to
+`models/checkpoints/<experiment-name>/latest.pt` (gitignored — a checkpoint is
+a build artifact, not source). The checkpoint carries everything Phase 10
+inference needs: model weights, architecture config, feature config, sequence
+length, and the gloss↔index label mapping — plus `source_tags` and `demo_mode`,
+so a checkpoint trained only on `demo_synthetic` data can never be silently
+mistaken for one that recognizes real Ukrainian Sign Language.
+
+**Running on the demo dataset is a pipeline sanity check, not a real model**:
+since the synthetic classes are trivially separable by construction, val
+accuracy reaches 100% in a few epochs — that only proves training/checkpoint
+plumbing works end-to-end, it says nothing about real-world recognition.
+Real training needs a real annotated УЖМ dataset (still not available as of
+Phase 9, see `PROJECT_STATUS.md`).
+
+## Inference (Phase 10)
+
+```
+ml/inference/
+└── recognizer.py         # SignRecognizer: loads a checkpoint, predicts from a full window
+```
+
+Framework-agnostic (no FastAPI import) so it's testable standalone — the same
+class powers `backend/app/services/lstm_inference_service.py`, which just
+adapts its output to the app's `InferenceService`/`SignPrediction` contract.
+The WebSocket handler (`backend/websocket/handler.py`) buffers each
+connection's incoming feature vectors into a sliding window sized to the
+checkpoint's `sequence_length`; once full, every subsequent frame runs a real
+prediction (see Phase 11 below for how those raw per-frame predictions become
+`"final_prediction"` events). A `demo_mode` checkpoint's predicted text is
+prefixed `"[DEMO] "` so it can never be mistaken for real УЖМ recognition,
+and `/health`'s `ml_pipeline_status` reports `"demo_mode"` (vs
+`"not_implemented"` with no checkpoint, or `"ready"` once trained on real
+data).
+
+```python
+from ml.inference.recognizer import SignRecognizer
+
+recognizer = SignRecognizer("models/checkpoints/baseline/latest.pt", device="cpu")
+result = recognizer.predict(feature_sequence)  # exactly recognizer.sequence_length frames
+print(result.gloss, result.confidence, result.is_demo_mode)
+```
+
+## Gloss-sequence aggregation (Phase 11)
+
+```
+ml/inference/
+└── aggregator.py         # GlossSequenceAggregator: debounces raw predictions into a gloss sequence
+```
+
+Phase 10's sliding window produces one prediction *per frame*, so a held sign
+gets predicted dozens of times in a row. `GlossSequenceAggregator` is a
+deterministic debounce heuristic (**not** real sign-boundary/linguistic
+segmentation — no movement/hold-phase detection): a gloss must be predicted
+`stability_frames` times in a row, above `confidence_threshold`, before it's
+"confirmed" and appended to `.sequence`; it won't be re-confirmed while the
+same sign keeps being held. The WebSocket handler feeds it every prediction
+and only sends `"final_prediction"` (`is_final=true`) at the moment of
+confirmation — everything else stays `"prediction"` (`is_final=false`),
+configurable via `WS_GLOSS_STABILITY_FRAMES` / `WS_GLOSS_CONFIDENCE_THRESHOLD`
+(.env).
+
+```python
+from ml.inference.aggregator import GlossSequenceAggregator
+
+agg = GlossSequenceAggregator(stability_frames=5, confidence_threshold=0.5)
+for gloss, confidence in predictions:
+    if agg.update(gloss, confidence):
+        print("confirmed:", agg.sequence[-1])
+```
+
+The accumulated `agg.sequence` (e.g. `["I", "WANT", "WATER"]`) is exactly
+what Phase 12's `TranslationService.gloss_to_text()` will need once it's
+implemented.
