@@ -32,14 +32,7 @@ import json
 import time
 from collections import deque
 
-from app.core.config import get_settings
-from app.core.logging import get_logger
-from app.services.inference_provider import get_inference_service
-from app.services.inference_service import MLNotReadyError
-from app.services.translation_service import RuleBasedTranslationService
 from fastapi import WebSocket, WebSocketDisconnect
-from starlette.websockets import WebSocketState
-
 from ml.features.feature_vector import (
     FeatureConfig,
     build_feature_vector,
@@ -53,6 +46,13 @@ from ml.preprocessing.landmarks import (
 )
 from ml.preprocessing.normalization import normalize_frame
 from ml.preprocessing.video_reader import FrameDecodeError, decode_base64_frame
+from starlette.websockets import WebSocketState
+
+from app.core.config import get_settings
+from app.core.logging import get_logger
+from app.services.inference_provider import get_inference_service
+from app.services.inference_service import MLNotReadyError
+from app.services.translation_service import RuleBasedTranslationService
 from websocket.manager import connection_manager
 from websocket.protocol import (
     ConnectionMessage,
@@ -256,6 +256,7 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
                 PredictionMessage(
                     type="final_prediction" if confirmed else "prediction",
                     text=display_text,
+                    gloss=prediction.sign,
                     confidence=prediction.confidence,
                     is_final=confirmed,
                 ).model_dump()

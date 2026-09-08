@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Avatar } from "@/components/Avatar";
 import { Camera } from "@/components/Camera";
 import { ConnectionStatus } from "@/components/ConnectionStatus";
@@ -23,6 +23,11 @@ export function TranslatorView(): React.ReactElement {
   const { status, lastMessage, connect, disconnect, sendFrame } = useWebSocket();
   const [inputText, setInputText] = useState("");
   const [translationState, setTranslationState] = useState<TranslationState>({ status: "idle" });
+  // Avatar (Phase 15) is driven by whichever source most recently produced a
+  // gloss sequence: a Phase 14 text/voice translation, or a live confirmed
+  // sign from the camera (Phase 11's final_prediction, accumulated here).
+  const [avatarGlossSequence, setAvatarGlossSequence] = useState<string[]>([]);
+  const recognizedGlossesRef = useRef<string[]>([]);
 
   useEffect(() => {
     connect();
@@ -31,11 +36,19 @@ export function TranslatorView(): React.ReactElement {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  useEffect(() => {
+    if (lastMessage?.type === "final_prediction") {
+      recognizedGlossesRef.current = [...recognizedGlossesRef.current, lastMessage.gloss];
+      setAvatarGlossSequence(recognizedGlossesRef.current);
+    }
+  }, [lastMessage]);
+
   const handleTranslate = useCallback(async (text: string) => {
     setTranslationState({ status: "loading" });
     try {
       const result = await textToGloss(text);
       setTranslationState({ status: "success", glossSequence: result.gloss_sequence });
+      setAvatarGlossSequence(result.gloss_sequence);
     } catch (err) {
       setTranslationState({
         status: "error",
@@ -101,9 +114,7 @@ export function TranslatorView(): React.ReactElement {
         <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">
           3D Avatar
         </h2>
-        <Avatar
-          glossSequence={translationState.status === "success" ? translationState.glossSequence : []}
-        />
+        <Avatar glossSequence={avatarGlossSequence} />
       </section>
     </div>
   );

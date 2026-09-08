@@ -65,6 +65,35 @@ describe("TranslatorView", () => {
     });
   });
 
+  it("feeds a confirmed camera gloss (final_prediction) into the avatar", async () => {
+    render(<TranslatorView />);
+
+    await waitFor(() => expect(lastInstance).not.toBeNull());
+
+    act(() => {
+      lastInstance?.onmessage?.({
+        data: JSON.stringify({
+          type: "final_prediction",
+          text: "[DEMO] Так.",
+          gloss: "TAK",
+          confidence: 0.91,
+          is_final: true,
+        }),
+      } as MessageEvent<string>);
+    });
+
+    // The live translation panel reflects the confirmed message, confirming
+    // it flowed through useWebSocket -> TranslatorView -> both the panel and
+    // the Avatar's glossSequence prop (Avatar itself falls back to an honest
+    // "WebGL не підтримується" message in jsdom, which has no real GL
+    // context -- the gloss-driven pose is covered by
+    // components/Avatar/player.test.ts, not re-tested here).
+    await waitFor(() => {
+      expect(screen.getByText("[DEMO] Так.")).toBeInTheDocument();
+    });
+    expect(screen.getByText(/WebGL не підтримується/)).toBeInTheDocument();
+  });
+
   it("translates typed text into a gloss sequence via the Phase 14 API", async () => {
     vi.stubGlobal(
       "fetch",

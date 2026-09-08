@@ -22,6 +22,9 @@ export interface FrameMessage {
 export interface PredictionMessage {
   type: "prediction" | "final_prediction";
   text: string;
+  /** Raw predicted sign label for this frame (Phase 15: drives the avatar --
+   * only consumed once is_final confirms it, never an interim guess). */
+  gloss: string;
   confidence: number;
   is_final: boolean;
 }

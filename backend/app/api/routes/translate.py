@@ -2,9 +2,11 @@
 POST /translate/text-to-gloss — Phase 14: Ukrainian text -> gloss sequence,
 via RuleBasedTranslationService (ml/nlp/text_to_gloss.py). A real (if
 narrow-coverage) rule-based parse, not a stub -- an unrecognized word gets a
-clear 422 naming it, never a guessed gloss sequence. Phase 15's avatar will
-consume the returned gloss_sequence once it exists; for now the frontend
-just displays it (see components/Transcript).
+clear 422 naming it, never a guessed gloss sequence. The frontend displays
+the returned gloss_sequence (components/Transcript) and drives the 3D
+avatar with it (components/Avatar, Phase 15) -- gloss->pose mapping turned
+out to be simple static data, so it lives entirely client-side
+(components/Avatar/poses.ts) rather than as a backend service/endpoint.
 """
 from __future__ import annotations
 
