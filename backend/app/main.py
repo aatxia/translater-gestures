@@ -16,6 +16,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routes.health import router as health_router
+from app.api.routes.translate import router as translate_router
 from app.api.websocket.routes import router as websocket_router
 from app.core.config import get_settings
 from app.core.logging import get_logger, setup_logging
@@ -58,6 +59,7 @@ def create_app() -> FastAPI:
     )
 
     app.include_router(health_router)
+    app.include_router(translate_router)
     app.include_router(websocket_router)
 
     return app

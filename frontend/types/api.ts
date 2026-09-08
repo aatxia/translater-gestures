@@ -37,3 +37,13 @@ export interface ConnectionMessage {
 }
 
 export type ServerMessage = PredictionMessage | ErrorMessage | ConnectionMessage;
+
+// --- REST API types (Phase 14) ---
+
+export interface TextToGlossRequest {
+  text: string;
+}
+
+export interface TextToGlossResponse {
+  gloss_sequence: string[];
+}

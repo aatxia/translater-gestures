@@ -1,4 +1,5 @@
 import { act, render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { TranslatorView } from "./TranslatorView";
 
@@ -62,5 +63,32 @@ describe("TranslatorView", () => {
     await waitFor(() => {
       expect(screen.getByText("ML pipeline not implemented yet")).toBeInTheDocument();
     });
+  });
+
+  it("translates typed text into a gloss sequence via the Phase 14 API", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        if (url.toString().endsWith("/translate/text-to-gloss")) {
+          return {
+            ok: true,
+            json: async () => ({ gloss_sequence: ["I", "WANT", "WATER"] }),
+          };
+        }
+        throw new Error("no backend in this test");
+      }),
+    );
+    const user = userEvent.setup();
+
+    render(<TranslatorView />);
+
+    await user.type(screen.getByPlaceholderText(/Введіть текст/), "Я хочу води.");
+    await user.click(screen.getByRole("button", { name: "Перекласти" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("WATER")).toBeInTheDocument();
+    });
+    expect(screen.getByText("I")).toBeInTheDocument();
+    expect(screen.getByText("WANT")).toBeInTheDocument();
   });
 });

@@ -218,38 +218,54 @@ for gloss, confidence in predictions:
 The accumulated `agg.sequence` (e.g. `["I", "WANT", "WATER"]`) is exactly
 what `TranslationService.gloss_to_text()` (Phase 12, below) needs.
 
-## Gloss-to-text NLP (Phase 12)
+## Gloss<->text NLP (Phase 12 + Phase 14)
 
 ```
 ml/nlp/
-└── gloss_to_text.py      # compose_sentence(): rule-based gloss sequence -> Ukrainian sentence
+├── lexicon.py             # shared gloss<->Ukrainian vocabulary (both directions read this)
+├── gloss_to_text.py       # compose_sentence(): gloss sequence -> Ukrainian sentence (Phase 12)
+└── text_to_gloss.py       # parse_gloss_sequence(): Ukrainian text -> gloss sequence (Phase 14)
 ```
 
-A genuine (if narrow) grammar engine — conjugates verbs by subject person,
-declines nouns into whichever case the verb governs, and inserts negation in
-the correct preverbal position — **not** `' '.join(gloss_sequence)`. Coverage
-is intentionally small: no public annotated УЖМ dataset exists yet (Phase 8),
-so there's no real gloss vocabulary to build a broad lexicon from. Every
-gloss and pattern it accepts is listed explicitly in the module; anything
-else raises `UnknownGlossError` or `UnsupportedPatternError` (both
-`ValueError`) rather than guessing.
+Two genuine (if narrow) rule-based engines sharing one lexicon, so they can
+never silently disagree about vocabulary — anything one direction can
+produce, the other can parse back. `compose_sentence()` conjugates verbs by
+subject person, declines nouns into whichever case the verb governs, and
+inserts negation in the correct preverbal position — **not**
+`' '.join(gloss_sequence)`. `parse_gloss_sequence()` is its reverse: it
+maps recognized Ukrainian surface forms (any conjugated/declined form) back
+to their gloss token, in the order they appeared. Coverage is intentionally
+small: no public annotated УЖМ dataset exists yet (Phase 8), so there's no
+real gloss vocabulary to build a broader lexicon from. Every gloss/word and
+pattern either direction accepts is listed explicitly in its module;
+anything else raises a clear `ValueError` subclass rather than guessing.
 
 ```python
 from ml.nlp.gloss_to_text import compose_sentence
+from ml.nlp.text_to_gloss import parse_gloss_sequence
 
 compose_sentence(["I", "WANT", "WATER"])  # -> "Я хочу води."
 compose_sentence(["I", "NOT", "WANT", "WATER"])  # -> "Я не хочу води."
 compose_sentence(["TAK"])  # -> "Так." (the demo-dataset glosses are all standalone words)
+
+parse_gloss_sequence("Я хочу води.")  # -> ["I", "WANT", "WATER"]
+parse_gloss_sequence("Привіт.")  # -> ["PRIVIT"]
 ```
 
 `backend/app/services/translation_service.py::RuleBasedTranslationService`
-wraps this for the `TranslationService` interface (`text_to_gloss` stays
-`NotConfigured` until Phase 14). The WebSocket handler calls it for every
-just-**confirmed** gloss (Phase 11's `is_final=true` moment): if the lexicon
-covers that single gloss, the confirmed prediction's `text` becomes the
-composed Ukrainian sentence instead of the raw gloss label — e.g. a
-confirmed `PRIVIT` becomes `[DEMO] Привіт.` rather than `[DEMO] PRIVIT`.
-Translating the full accumulated multi-gloss sequence (real sentences like
-"Я хочу води.") isn't wired into the live WebSocket stream yet — that needs
-real multi-word gloss sequences (no dataset yet) and a way to know when a
-*sentence*, not just one sign, is complete.
+wraps both for the `TranslationService` interface. Two live integration
+points:
+
+- **Recognition side** (Phase 10-11 WebSocket stream): on every
+  just-**confirmed** gloss (Phase 11's `is_final=true` moment), the handler
+  tries `gloss_to_text([gloss])`; if the lexicon covers it (all 5
+  demo-dataset glosses do), the confirmed prediction's `text` becomes the
+  composed Ukrainian sentence instead of the raw label — e.g. a confirmed
+  `PRIVIT` becomes `[DEMO] Привіт.` rather than `[DEMO] PRIVIT`. Translating
+  the full accumulated multi-gloss sequence isn't wired in yet -- that needs
+  real multi-word gloss sequences (no dataset yet) and a way to know when a
+  *sentence*, not just one sign, is complete.
+- **Generation side** (Phase 13-14 UI, `POST /translate/text-to-gloss`): the
+  "Текст / Голос → Жести" panel sends whatever text is typed or dictated
+  (Phase 13) to this endpoint and displays the returned gloss sequence
+  (`components/Transcript`) -- driving an actual avatar comes in Phase 15.

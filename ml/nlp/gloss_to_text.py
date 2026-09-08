@@ -12,15 +12,16 @@ gloss order), and composes standard Ukrainian word order from sign order
 
 Coverage is intentionally small: no public annotated УЖМ dataset exists yet
 (Phase 8), so there is no real gloss vocabulary to build a broad lexicon
-from. Every gloss and every sentence pattern this module accepts is listed
-explicitly below. An unrecognized gloss, or a recognized-glosses-but-
-unrecognized-pattern combination, raises a clear, typed error rather than
-guessing a plausible-looking but possibly ungrammatical sentence -- the same
-"no fake AI" rule the rest of this project follows for CV/ML.
+from -- see ml/nlp/lexicon.py, shared with ml/nlp/text_to_gloss.py (Phase 14)
+so the two directions never disagree about vocabulary. An unrecognized
+gloss, or a recognized-glosses-but-unrecognized-pattern combination, raises
+a clear, typed error rather than guessing a plausible-looking but possibly
+ungrammatical sentence -- the same "no fake AI" rule the rest of this
+project follows for CV/ML.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from ml.nlp.lexicon import NEGATION_GLOSS, NOUNS, PRONOUNS, STANDALONE, VERBS
 
 
 class UnknownGlossError(ValueError):
@@ -30,73 +31,6 @@ class UnknownGlossError(ValueError):
 class UnsupportedPatternError(ValueError):
     """Raised when every gloss is individually recognized, but their
     combination doesn't match any implemented composition rule."""
-
-
-@dataclass(frozen=True)
-class PronounEntry:
-    lemma: str  # capitalized surface form, e.g. "Я"
-    person_key: str  # selects the matching VerbEntry.conjugation entry
-
-
-@dataclass(frozen=True)
-class VerbEntry:
-    conjugation: dict[str, str]  # person_key -> conjugated surface form
-    governs_case: str  # which NounEntry.cases key a direct object takes
-
-
-@dataclass(frozen=True)
-class NounEntry:
-    cases: dict[str, str]  # case name -> surface form
-
-
-@dataclass(frozen=True)
-class StandaloneEntry:
-    text: str  # lowercase surface form; composition capitalizes it
-
-
-# --- Lexicon -----------------------------------------------------------
-# Covers: the Phase 8 demo-dataset glosses (all standalone interjections),
-# plus a small illustrative pronoun/verb/noun set exercising real
-# conjugation + case government -- exactly the ["I","WANT","WATER"] ->
-# "Я хочу води." example from TranslationService.gloss_to_text()'s docstring.
-
-PRONOUNS: dict[str, PronounEntry] = {
-    "I": PronounEntry("Я", "1sg"),
-    "YOU": PronounEntry("Ти", "2sg"),
-    "WE": PronounEntry("Ми", "1pl"),
-}
-
-VERBS: dict[str, VerbEntry] = {
-    "WANT": VerbEntry(
-        conjugation={"1sg": "хочу", "2sg": "хочеш", "1pl": "хочемо"},
-        governs_case="genitive_partitive",
-    ),
-    "LIKE": VerbEntry(
-        conjugation={"1sg": "люблю", "2sg": "любиш", "1pl": "любимо"},
-        governs_case="accusative",
-    ),
-    "HAVE": VerbEntry(
-        conjugation={"1sg": "маю", "2sg": "маєш", "1pl": "маємо"},
-        governs_case="accusative",
-    ),
-}
-
-NOUNS: dict[str, NounEntry] = {
-    "WATER": NounEntry({"nominative": "вода", "genitive_partitive": "води", "accusative": "воду"}),
-    "BREAD": NounEntry({"nominative": "хліб", "genitive_partitive": "хліба", "accusative": "хліб"}),
-    "TEA": NounEntry({"nominative": "чай", "genitive_partitive": "чаю", "accusative": "чай"}),
-}
-
-# ml/datasets/synthetic.py's DEMO_GLOSSES, mapped to their real meaning.
-STANDALONE: dict[str, StandaloneEntry] = {
-    "PRIVIT": StandaloneEntry("привіт"),
-    "DYAKUYU": StandaloneEntry("дякую"),
-    "TAK": StandaloneEntry("так"),
-    "NI": StandaloneEntry("ні"),
-    "BUD_LASKA": StandaloneEntry("будь ласка"),
-}
-
-NEGATION_GLOSS = "NOT"  # e.g. ["I", "NOT", "WANT", "WATER"] -> "Я не хочу води."
 
 
 def _classify(gloss: str) -> str:

@@ -1,6 +1,6 @@
 # PROJECT STATUS
 
-Останнє оновлення: Phase 12 complete.
+Останнє оновлення: Phase 14 complete.
 
 ## Що вже є
 
@@ -497,9 +497,78 @@ transformer/video_jepa залишаються заявленими в конфі
 Лексикон — 3 займенники, 3 дієслова, 3 іменники + 5 demo-стендалонів; будь-який реальний gloss
 поза цим списком чесно відхиляється, а не вгадується.
 
+## PHASE 13 — Voice input (browser STT) (COMPLETE)
+
+Знайдено точне підтвердження в уже наявному коді: `backend/app/services/speech_service.py`
+(написаний завчасно в Phase 2) явно документує "SpeechRecognizer... Implemented in Phase 13
+only if/when a server-side STT provider... is configured" — за замовчуванням
+(`STT_PROVIDER=browser`) весь STT відбувається в браузері, backend узагалі не займається аудіо.
+Реальна робота Phase 13 — саме frontend:
+
+- `frontend/hooks/useSpeechRecognition.ts` — обгортка над браузерним Web Speech API
+  (`SpeechRecognition`/`webkitSpeechRecognition`), `lang="uk-UA"`, чесні стани
+  (`idle`/`listening`/`stopped`/`error`) з розпізнаванням конкретних причин помилки
+  (`not-allowed`→permission_denied, `no-speech`, `network`, `unsupported` якщо API взагалі
+  нема) — той самий підхід чесної обробки помилок, що і в `useCamera.ts` (Phase 4).
+- `frontend/components/VoiceInput/` — кнопка 🎤, статус, викликає `onTranscript(text)` при
+  фінальному розпізнаному тексті.
+- Підключено в `TranslatorView`: голосовий транскрипт заповнює те саме текстове поле, що й
+  ручне введення (Phase 14).
+
+**Перевірено наживо:** `vitest` — 34/34 passed (нові: `useSpeechRecognition.test.ts` (5),
+`VoiceInput.test.tsx` (2)), `tsc --noEmit` — 0 помилок, `eslint` — 0 помилок/warnings,
+`next build` — успішний production build.
+
+**Known limitations:** сервер-сайд STT (реальний `SpeechRecognizer` для `STT_PROVIDER != browser`)
+залишається `NotConfigured` — за дизайном, доки не з'явиться конкретний провайдер, який
+дійсно потрібно підключити.
+
+## PHASE 14 — Text-to-gloss NLP + UI (COMPLETE)
+
+Зворотний напрямок до Phase 12, і повне UI-підключення "Текст / Голос → Жести":
+
+- `ml/nlp/lexicon.py` — спільний словник (займенники/дієслова/іменники/стендалони) винесено
+  окремо від `gloss_to_text.py`, щоб Phase 12 (gloss→текст) і Phase 14 (текст→gloss) читали
+  **той самий** словник і ніколи не розійшлись у лексиці.
+- `ml/nlp/text_to_gloss.py` — `parse_gloss_sequence()`: реальний (не заглушка) парсер.
+  Будує reverse-index (кожна відмінена/дієвідмінена форма слова → gloss) один раз при
+  імпорті; заперечувальна частка "не" мапиться на `NOT` **на тому самому місці**, де вона
+  стояла (українське заперечення вже препозитивне, так само як і в gloss-конвенції Phase 12
+  — тож обидва напрямки узгоджені без додаткового реордерингу). Стендалон-фрази (напр.
+  "будь ласка") розпізнаються як ціла фраза перед пословним розбором. Невідоме слово →
+  `UnrecognizedWordError` з точним словом і повним текстом — чесна відмова, не вгадування.
+  **Round-trip тест**: усе, що `parse_gloss_sequence` розбирає, `compose_sentence` збирає
+  назад в ідентичний текст — гарантія, що два напрямки узгоджені за побудовою.
+- `backend/app/services/translation_service.py` — `RuleBasedTranslationService.text_to_gloss()`
+  тепер реальний виклик рушія (замість `NotConfiguredError`).
+- `backend/app/api/routes/translate.py` + `app/schemas/translate.py` — новий
+  `POST /translate/text-to-gloss`: `{"text": "..."}` → `{"gloss_sequence": [...]}`, або
+  `422` з чітким `detail`, якщо слово не розпізнано.
+- Frontend: `components/TextInput/` (поле + кнопка "Перекласти"), `components/Transcript/`
+  (показує gloss-послідовність як токени, з чесним поясненням "аватар — Phase 15, поки лише
+  текст"), обидва підключені в `TranslatorView` разом з `VoiceInput` (Phase 13) — голос і
+  текст ведуть в одне поле, кнопка викликає `POST /translate/text-to-gloss` через
+  `lib/api.ts::textToGloss()`.
+
+**Перевірено наживо:**
+- `pytest`: `ml/` — 124 passed (+26: `test_text_to_gloss.py` включно з round-trip тестами
+  для кожного підтримуваного речення); `backend/` — 28 passed (+5: `test_translate_route.py`,
+  оновлений `test_translation_service.py`). `ruff check` — чисто.
+- `vitest`: 34/34 passed (+10 нових: `TextInput.test.tsx`, `Transcript.test.tsx`, плюс
+  інтеграційний тест у `TranslatorView.test.tsx`, що вводить текст, тисне "Перекласти" і
+  бачить реальні gloss-токени). `tsc --noEmit`, `eslint`, `next build` — усі чисті.
+- **Реальний E2E через живий `uvicorn`, не мок**: `curl POST /translate/text-to-gloss`:
+  `"Я хочу води."` → `{"gloss_sequence":["I","WANT","WATER"]}`; `"Привіт."` →
+  `{"gloss_sequence":["PRIVIT"]}`; `"Я не хочу води."` → `{"gloss_sequence":["I","NOT","WANT","WATER"]}`;
+  `"Я хочу кавун."` → `422 {"detail":"Unrecognized word 'кавун'..."}`.
+
+**Known limitations:** той самий вузький лексикон, що й Phase 12 (3 займенники, 3 дієслова,
+3 іменники, 5 стендалонів) — реальний широкий словник чекає на реальний датасет УЖМ (Phase 8).
+Порядок gloss = порядок слів у введеному тексті, без переупорядкування в граматику жестової
+мови (topic-comment тощо) — задокументоване обмеження, не помилка.
+
 ## Наступна фаза
 
-Phase 13 у явному переліку майстер-промпту не зустрічалась дотепер (розділи NLP/переклад
-охоплені Phase 11-12, `text_to_gloss` — Phase 14, avatar — Phase 15) — наступний логічний крок
-не задокументований заздалегідь у коді проєкту й потребує уточнення в розмові, перш ніж
-починати.
+**PHASE 15 — 3D Avatar**: Three.js-аватар, що анімує gloss-послідовність (з Phase 14, або з
+`GlossSequenceAggregator.sequence` у Phase 11) у видимі жести. `components/Avatar/` вже
+заскафолжено (`.gitkeep`), зараз показує лише плейсхолдер "буде доданий у Phase 15".

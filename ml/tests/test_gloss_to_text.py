@@ -69,7 +69,7 @@ def test_empty_sequence_rejected():
 
 def test_verb_missing_a_conjugation_for_the_subject_raises_unsupported_pattern(monkeypatch):
     from ml.nlp import gloss_to_text
-    from ml.nlp.gloss_to_text import VerbEntry
+    from ml.nlp.lexicon import VerbEntry
 
     incomplete_verb = VerbEntry(conjugation={"2sg": "хочеш"}, governs_case="accusative")
     monkeypatch.setitem(gloss_to_text.VERBS, "WANT", incomplete_verb)
@@ -80,7 +80,7 @@ def test_verb_missing_a_conjugation_for_the_subject_raises_unsupported_pattern(m
 
 def test_verb_governing_a_case_the_noun_lacks_raises_unsupported_pattern(monkeypatch):
     from ml.nlp import gloss_to_text
-    from ml.nlp.gloss_to_text import NounEntry
+    from ml.nlp.lexicon import NounEntry
 
     incomplete_noun = NounEntry(cases={"accusative": "хліб"})
     monkeypatch.setitem(gloss_to_text.NOUNS, "BREAD", incomplete_noun)
