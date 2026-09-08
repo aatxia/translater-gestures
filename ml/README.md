@@ -267,5 +267,9 @@ points:
   *sentence*, not just one sign, is complete.
 - **Generation side** (Phase 13-14 UI, `POST /translate/text-to-gloss`): the
   "Текст / Голос → Жести" panel sends whatever text is typed or dictated
-  (Phase 13) to this endpoint and displays the returned gloss sequence
-  (`components/Transcript`) -- driving an actual avatar comes in Phase 15.
+  (Phase 13) to this endpoint, displays the returned gloss sequence
+  (`components/Transcript`), and drives the placeholder 3D avatar
+  (`frontend/components/Avatar/`, Phase 15) -- a procedural Three.js puppet
+  with hand-authored demo poses, **not** real УЖМ signs (no motion-capture
+  data exists yet, see `PROJECT_STATUS.md` Phase 15). Recognition-side gloss
+  sequences (Phase 11) aren't wired to the avatar yet.

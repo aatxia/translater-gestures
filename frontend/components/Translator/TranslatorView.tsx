@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { Avatar } from "@/components/Avatar";
 import { Camera } from "@/components/Camera";
 import { ConnectionStatus } from "@/components/ConnectionStatus";
 import { TextInput } from "@/components/TextInput";
@@ -100,9 +101,9 @@ export function TranslatorView(): React.ReactElement {
         <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">
           3D Avatar
         </h2>
-        <div className="flex h-40 items-center justify-center rounded-xl bg-slate-100 text-sm text-slate-400">
-          Three.js avatar буде доданий у Phase 15
-        </div>
+        <Avatar
+          glossSequence={translationState.status === "success" ? translationState.glossSequence : []}
+        />
       </section>
     </div>
   );

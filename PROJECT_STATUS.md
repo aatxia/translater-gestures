@@ -567,8 +567,53 @@ only if/when a server-side STT provider... is configured" — за замовч�
 Порядок gloss = порядок слів у введеному тексті, без переупорядкування в граматику жестової
 мови (topic-comment тощо) — задокументоване обмеження, не помилка.
 
+## PHASE 15 — 3D Avatar (COMPLETE)
+
+Three.js-аватар, що анімує gloss-послідовність з Phase 14 (`POST /translate/text-to-gloss`)
+у видимі рухи процедурної ляльки. Замінив плейсхолдер "буде доданий у Phase 15" в `TranslatorView`.
+
+- `frontend/components/Avatar/poses.ts` — `JointRotations` (голова, плечі, лікті),
+  `NEUTRAL_POSE`, та `GLOSS_POSES`: рукописні (hand-authored) демо-жести лише для 5 glosses
+  демо-датасету (`PRIVIT`→хвиля рукою, `TAK`→кивок, `NI`→похитування головою,
+  `DYAKUYU`/`BUD_LASKA`→руки разом). **Це НЕ справжні жести УЖМ** — жодного motion-capture чи
+  референсних даних для реальних жестів немає (Phase 8: публічного датасету УЖМ не знайдено).
+  `poseForGloss()` для будь-якого іншого gloss повертає `null` (чесна відсутність анімації),
+  а не вгадану позу.
+- `frontend/components/Avatar/player.ts` — `GlossPlayer`: чиста (без Three.js/DOM) логіка
+  послідовного відтворення поз — лерп-перехід (`TRANSITION_SECONDS=0.35s`) до цільової пози,
+  утримання (`HOLD_SECONDS=1.1s`, з синусоїдним "wobble" для жестів на кшталт хвилі рукою),
+  перехід до наступного gloss. `unanimatedGlosses` — список glosses без визначеної пози
+  (утримують `NEUTRAL_POSE`, а не вигадану анімацію).
+- `frontend/components/Avatar/puppet.ts` — `buildPuppet()`: процедурна лялька з примітивів
+  Three.js (сфера-голова, циліндри тулуб/руки), без rigged/skinned GLTF-моделі. Ієрархія
+  `Object3D`-груп для шарнірів (плече → лікоть, вкладені) — `applyRotations()` мапить
+  `JointRotations` на обертання відповідних pivot-груп.
+- `frontend/components/Avatar/Avatar.tsx` — React-компонент: `detectWebglSupport()` одноразово
+  перевіряє підтримку WebGL через одноразовий throwaway `<canvas>` (без setState в ефекті —
+  визначається лінивим ініціалізатором `useState`), і якщо непідтримується — чесне
+  повідомлення "WebGL не підтримується цим браузером" замість порожнього/зламаного canvas.
+  Інакше: `THREE.WebGLRenderer` на реальному `<canvas>`, `requestAnimationFrame`-цикл викликає
+  `GlossPlayer.update(delta)` щокадру, показує видиму позначку "⚠ DEMO — умовні жести, не
+  справжня УЖМ" і (якщо є) список glosses без анімації.
+- `frontend/components/Translator/TranslatorView.tsx` — `<Avatar glossSequence={...}>`
+  підключено: показує послідовність з останнього успішного `text-to-gloss` перекладу
+  (Phase 14), порожній масив у стані idle/loading/error.
+
+**Перевірено наживо:**
+- `vitest`: 52/52 passed (+18 нових: `poses.test.ts`, `player.test.ts` — таймінг переходу/
+  утримання/wobble/переходу між glosses, `puppet.test.ts` — ієрархія шарнірів і мапінг
+  обертань, `Avatar.test.tsx` — WebGL-fallback у jsdom, де немає реального GL-контексту).
+  `tsc --noEmit`, `eslint`, `next build` — усі чисті.
+- `three@0.185.1` + `@types/three@0.185.4` додані в `frontend/package.json`.
+
+**Known limitations:** пози — лише 5 рукописних демо-жестів (не справжня УЖМ, задокументовано
+в коді і в UI через позначку "DEMO"); реальні жести жестової мови вимагають або справжнього
+motion-capture/анімаційного датасету, або rigged 3D-моделі з реальними даними про рухи рук —
+жодного з них ще немає (Phase 8). `GlossSequenceAggregator.sequence` (Phase 11, розпізнавання
+з камери) поки не підключено до аватара — тільки напрямок Phase 14 (текст/голос → жести).
+
 ## Наступна фаза
 
-**PHASE 15 — 3D Avatar**: Three.js-аватар, що анімує gloss-послідовність (з Phase 14, або з
-`GlossSequenceAggregator.sequence` у Phase 11) у видимі жести. `components/Avatar/` вже
-заскафолжено (`.gitkeep`), зараз показує лише плейсхолдер "буде доданий у Phase 15".
+Наступна фаза ще не визначена — розпізнана з камери gloss-послідовність (Phase 11) поки не
+анімує аватар (лише напрямок текст/голос → жести підключено), і немає реального датасету УЖМ
+для повноцінного розпізнавання чи анімації (Phase 8).
