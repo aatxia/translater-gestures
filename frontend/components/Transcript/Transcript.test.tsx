@@ -25,4 +25,20 @@ describe("Transcript", () => {
     expect(screen.getByText("WANT")).toBeInTheDocument();
     expect(screen.getByText("WATER")).toBeInTheDocument();
   });
+
+  it("groups a fingerspelled word (Phase 16) into one readable chip", () => {
+    render(
+      <Transcript
+        state={{
+          status: "success",
+          glossSequence: ["I", "WANT", "FS_К", "FS_А", "FS_В", "FS_У", "FS_Н"],
+        }}
+      />,
+    );
+
+    expect(screen.getByText("I")).toBeInTheDocument();
+    expect(screen.getByText("WANT")).toBeInTheDocument();
+    expect(screen.getByText("🔤 Кавун")).toBeInTheDocument();
+    expect(screen.queryByText("FS_К")).not.toBeInTheDocument();
+  });
 });

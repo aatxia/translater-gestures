@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
+import { groupGlossesForDisplay } from "@/lib/glossDisplay";
 import { GlossPlayer } from "./player";
 import { applyRotations, buildPuppet } from "./puppet";
 
@@ -121,7 +122,10 @@ export function Avatar({ glossSequence }: AvatarProps): React.ReactElement {
       <canvas ref={canvasRef} className="h-56 w-full rounded-xl bg-slate-100" />
       {status.unanimatedGlosses.length > 0 && (
         <p className="text-xs text-slate-400">
-          Немає анімації для: {status.unanimatedGlosses.join(", ")}
+          Немає анімації для:{" "}
+          {groupGlossesForDisplay(status.unanimatedGlosses)
+            .map((item) => item.label)
+            .join(", ")}
         </p>
       )}
     </div>

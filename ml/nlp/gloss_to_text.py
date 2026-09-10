@@ -18,9 +18,17 @@ gloss, or a recognized-glosses-but-unrecognized-pattern combination, raises
 a clear, typed error rather than guessing a plausible-looking but possibly
 ungrammatical sentence -- the same "no fake AI" rule the rest of this
 project follows for CV/ML.
+
+Phase 16: a run of consecutive FS_ fingerspelling gloss tokens (see
+ml/nlp/fingerspelling.py) composes into the word they spell -- standalone,
+or filling the object slot of the SVO pattern. Spelling is caseless/formless
+(exactly the letters that were spelled, capitalized), never Ukrainian-
+declined into the verb's governed case the way a lexicon NOUN is -- there's
+no real declension data for arbitrary fingerspelled words to draw on.
 """
 from __future__ import annotations
 
+from ml.nlp.fingerspelling import despell, is_fingerspell_gloss
 from ml.nlp.lexicon import NEGATION_GLOSS, NOUNS, PRONOUNS, STANDALONE, VERBS
 
 
@@ -44,7 +52,31 @@ def _classify(gloss: str) -> str:
         return "standalone"
     if gloss == NEGATION_GLOSS:
         return "negation"
+    if is_fingerspell_gloss(gloss):
+        return "fingerspell"
     raise UnknownGlossError(f"Unknown gloss {gloss!r} -- not in the Phase 12 lexicon yet.")
+
+
+def _group_units(gloss_sequence: list[str]) -> list[tuple[str, str]]:
+    """gloss_sequence -> [(pose, value)], collapsing each consecutive run of
+    fingerspelling glosses into one ("fingerspell", <word>) unit. `value` is
+    the original gloss for every other pose. Raises UnknownGlossError first,
+    same as classifying gloss-by-gloss would."""
+    poses = [_classify(gloss) for gloss in gloss_sequence]
+
+    units: list[tuple[str, str]] = []
+    i = 0
+    while i < len(gloss_sequence):
+        if poses[i] != "fingerspell":
+            units.append((poses[i], gloss_sequence[i]))
+            i += 1
+            continue
+        j = i
+        while j < len(gloss_sequence) and poses[j] == "fingerspell":
+            j += 1
+        units.append(("fingerspell", despell(gloss_sequence[i:j])))
+        i = j
+    return units
 
 
 def compose_sentence(gloss_sequence: list[str]) -> str:
@@ -54,25 +86,30 @@ def compose_sentence(gloss_sequence: list[str]) -> str:
     if not gloss_sequence:
         raise ValueError("gloss_sequence must not be empty")
 
-    poses = [_classify(gloss) for gloss in gloss_sequence]  # raises UnknownGlossError first
+    units = _group_units(gloss_sequence)  # raises UnknownGlossError first
+    poses = [pose for pose, _ in units]
 
-    # Pattern: a single standalone word (interjection/particle).
-    if len(gloss_sequence) == 1 and poses[0] == "standalone":
-        return STANDALONE[gloss_sequence[0]].text.capitalize() + "."
+    # Pattern: a single standalone word (interjection/particle, or a fully
+    # fingerspelled word on its own -- e.g. someone spelling just a name).
+    if len(units) == 1 and poses[0] == "standalone":
+        return STANDALONE[units[0][1]].text.capitalize() + "."
+    if len(units) == 1 and poses[0] == "fingerspell":
+        return units[0][1].capitalize() + "."
 
-    # Pattern: [PRONOUN, (NOT), VERB, NOUN?] -- SVO with optional preverbal negation.
-    tokens = list(gloss_sequence)
+    # Pattern: [PRONOUN, (NOT), VERB, (NOUN | fingerspelled word)?] -- SVO
+    # with optional preverbal negation.
+    tokens = list(units)
     negated = len(tokens) >= 2 and poses[0] == "pronoun" and poses[1] == "negation"
     if negated:
         tokens.pop(1)
         poses = [poses[0], *poses[2:]]
 
     if len(tokens) in (2, 3) and poses[0] == "pronoun" and poses[1] == "verb":
-        pronoun = PRONOUNS[tokens[0]]
-        verb = VERBS[tokens[1]]
+        pronoun = PRONOUNS[tokens[0][1]]
+        verb = VERBS[tokens[1][1]]
         if pronoun.person_key not in verb.conjugation:
             raise UnsupportedPatternError(
-                f"Verb {tokens[1]!r} has no known conjugation for person {pronoun.person_key!r}."
+                f"Verb {tokens[1][1]!r} has no known conjugation for person {pronoun.person_key!r}."
             )
         predicate = verb.conjugation[pronoun.person_key]
         if negated:
@@ -81,14 +118,20 @@ def compose_sentence(gloss_sequence: list[str]) -> str:
         if len(tokens) == 2:
             return f"{pronoun.lemma} {predicate}."
 
-        if poses[2] != "noun":
-            raise UnsupportedPatternError(f"Expected a noun after the verb, got gloss {tokens[2]!r}.")
-        noun = NOUNS[tokens[2]]
-        if verb.governs_case not in noun.cases:
+        if poses[2] == "fingerspell":
+            object_form = tokens[2][1].capitalize()
+        elif poses[2] == "noun":
+            noun = NOUNS[tokens[2][1]]
+            if verb.governs_case not in noun.cases:
+                raise UnsupportedPatternError(
+                    f"Noun {tokens[2][1]!r} has no {verb.governs_case!r} form needed "
+                    f"by verb {tokens[1][1]!r}."
+                )
+            object_form = noun.cases[verb.governs_case]
+        else:
             raise UnsupportedPatternError(
-                f"Noun {tokens[2]!r} has no {verb.governs_case!r} form needed by verb {tokens[1]!r}."
+                f"Expected a noun (or fingerspelled word) after the verb, got gloss {tokens[2][1]!r}."
             )
-        object_form = noun.cases[verb.governs_case]
         return f"{pronoun.lemma} {predicate} {object_form}."
 
     raise UnsupportedPatternError(

@@ -87,3 +87,21 @@ def test_verb_governing_a_case_the_noun_lacks_raises_unsupported_pattern(monkeyp
 
     with pytest.raises(UnsupportedPatternError, match="genitive_partitive"):
         compose_sentence(["I", "WANT", "BREAD"])
+
+
+def test_fingerspelled_glosses_compose_into_the_spelled_word_standalone():
+    gloss_sequence = ["FS_О", "FS_К", "FS_С", "FS_А", "FS_Н", "FS_А"]
+    assert compose_sentence(gloss_sequence) == "Оксана."
+
+
+def test_fingerspelled_glosses_fill_the_object_slot_of_the_svo_pattern():
+    gloss_sequence = ["I", "LIKE", "FS_О", "FS_К", "FS_С", "FS_А", "FS_Н", "FS_У"]
+    assert compose_sentence(gloss_sequence) == "Я люблю Оксану."
+
+
+def test_fingerspelled_object_is_not_declined_into_the_verbs_governed_case():
+    # WANT governs genitive_partitive for a lexicon NOUN ("WATER" -> "води"),
+    # but a fingerspelled word has no case data -- it's inserted as spelled,
+    # capitalized, not force-declined into a case that doesn't exist for it.
+    gloss_sequence = ["I", "WANT", "FS_К", "FS_А", "FS_В", "FS_У", "FS_Н"]
+    assert compose_sentence(gloss_sequence) == "Я хочу Кавун."

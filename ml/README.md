@@ -271,5 +271,49 @@ points:
   (`components/Transcript`), and drives the placeholder 3D avatar
   (`frontend/components/Avatar/`, Phase 15) -- a procedural Three.js puppet
   with hand-authored demo poses, **not** real УЖМ signs (no motion-capture
-  data exists yet, see `PROJECT_STATUS.md` Phase 15). Recognition-side gloss
-  sequences (Phase 11) aren't wired to the avatar yet.
+  data exists yet, see `PROJECT_STATUS.md` Phase 15). The avatar is also
+  driven by recognition-side confirmed signs (Phase 11's WebSocket
+  `final_prediction.gloss`), accumulated client-side -- whichever source
+  (camera or text/voice) most recently produced a sequence animates it.
+
+## Fingerspelling / дактилологія (Phase 16)
+
+```
+ml/nlp/
+└── fingerspelling.py    # Ukrainian dactyl alphabet <-> FS_<letter> gloss tokens
+```
+
+Real signers don't just give up on an out-of-vocabulary word -- they spell
+it letter-by-letter using a standardized dactyl alphabet. `text_to_gloss.py`
+now falls back to this for any word not in the (still tiny, Phase 8-blocked)
+lexicon, instead of refusing outright; `gloss_to_text.py` composes a run of
+`FS_` gloss tokens back into the word they spell, standalone or filling the
+object slot of the SVO pattern.
+
+```python
+from ml.nlp.fingerspelling import spell_word, despell
+from ml.nlp.text_to_gloss import parse_gloss_sequence
+from ml.nlp.gloss_to_text import compose_sentence
+
+spell_word("Оксана")  # -> ["FS_О", "FS_К", "FS_С", "FS_А", "FS_Н", "FS_А"]
+parse_gloss_sequence("Я хочу кавун.")  # -> ["I", "WANT", "FS_К", "FS_А", "FS_В", "FS_У", "FS_Н"]
+compose_sentence(["FS_О", "FS_К", "FS_С", "FS_А", "FS_Н", "FS_А"])  # -> "Оксана."
+```
+
+What this does and doesn't claim:
+- The letter↔gloss mapping is genuine, unambiguous data (all 33 Ukrainian
+  alphabet letters) -- not a guess. A word with a character that has no
+  dactyl handshape (Latin script, digits, apostrophe) still raises
+  `UnrecognizedWordError`/`UnknownGlossError` rather than being silently
+  dropped or faked.
+- Spelling is caseless/formless: it records exactly the letters spelled, not
+  a grammatically-declined citation form, so `compose_sentence` can't put a
+  fingerspelled object into the verb's governed case the way a lexicon NOUN
+  is (documented limitation, tested in `ml/tests/test_gloss_to_text.py`).
+- **No avatar animation**: the 3D puppet (Phase 15) has no finger geometry,
+  so it can't render 33 visually distinct handshapes -- `FS_` glosses have
+  no defined pose (same as any other unmapped gloss) and the avatar honestly
+  holds neutral rather than faking a handshape. The frontend still shows the
+  spelled word as readable text (`frontend/lib/glossDisplay.ts` groups
+  consecutive `FS_` chips into one "🔤 word" chip in `components/Transcript`
+  and `components/Avatar`'s "no animation for" line).

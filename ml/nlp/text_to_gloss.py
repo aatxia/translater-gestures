@@ -17,13 +17,17 @@ with preverbal negation, since Ukrainian negation is already preverbal) for
 every pattern this project currently supports -- a real limitation for any
 future pattern where sign order and spoken order would genuinely differ.
 
-A word in the input that isn't in the lexicon raises UnrecognizedWordError
-rather than guessing or silently dropping it.
+A word in the input that isn't in the lexicon is fingerspelled letter-by-
+letter (Phase 16, ml/nlp/fingerspelling.py) rather than dropped or guessed
+-- a real fallback deaf signers use for names/loanwords, not a workaround.
+Only a word containing a character with no dactyl handshape (Latin script,
+digits, ...) raises UnrecognizedWordError.
 """
 from __future__ import annotations
 
 import re
 
+from ml.nlp.fingerspelling import UnspellableCharacterError, spell_word
 from ml.nlp.lexicon import (
     NEGATION_GLOSS,
     NEGATION_PARTICLE,
@@ -37,7 +41,8 @@ _TRAILING_PUNCTUATION = re.compile(r"[.,!?;:]+$")
 
 
 class UnrecognizedWordError(ValueError):
-    """Raised when a word in the input text isn't in the lexicon."""
+    """Raised when a word isn't in the lexicon AND can't be fingerspelled
+    (contains a character with no dactyl handshape)."""
 
 
 def _strip_punctuation(word: str) -> str:
@@ -90,10 +95,16 @@ def parse_gloss_sequence(text: str) -> list[str]:
             gloss_sequence.append(NEGATION_GLOSS)
             continue
         gloss = _REVERSE_INDEX.get(word)
-        if gloss is None:
+        if gloss is not None:
+            gloss_sequence.append(gloss)
+            continue
+
+        try:
+            gloss_sequence.extend(spell_word(word))
+        except UnspellableCharacterError as exc:
             raise UnrecognizedWordError(
-                f"Unrecognized word {word!r} in {text!r} -- not in the Phase 12/14 lexicon yet."
-            )
-        gloss_sequence.append(gloss)
+                f"Unrecognized word {word!r} in {text!r} -- not in the Phase 12/14 "
+                f"lexicon, and can't be fingerspelled either: {exc}"
+            ) from exc
 
     return gloss_sequence
