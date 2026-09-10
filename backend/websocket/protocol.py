@@ -6,8 +6,10 @@ Client -> Server:
 
 Server -> Client:
     {"type": "connection", "status": "ok" | "closed"}
-    {"type": "prediction", "text": "...", "gloss": "TAK", "confidence": 0.92, "is_final": false}
-    {"type": "final_prediction", "text": "...", "gloss": "TAK", "confidence": 0.95, "is_final": true}
+    {"type": "prediction", "text": "...", "gloss": "TAK", "confidence": 0.92,
+     "is_final": false, "facial_grammar": "NONE"}
+    {"type": "final_prediction", "text": "...", "gloss": "TAK", "confidence": 0.95,
+     "is_final": true, "facial_grammar": "EYEBROWS_RAISED"}
     {"type": "error", "message": "..."}
 
 "gloss" (Phase 15) is the raw predicted sign label for this frame -- the
@@ -15,6 +17,13 @@ same value "text" is derived from via Phase 12's gloss->text composition
 (or, if the lexicon doesn't cover it, "text" *is* the raw gloss). It's what
 drives the 3D avatar (frontend/components/Avatar/): the frontend only
 plays a gloss once its final_prediction confirms it, never an interim guess.
+
+"facial_grammar" (Phase 17) is this frame's non-manual grammar marker --
+"NONE", "EYEBROWS_RAISED" (yes/no question), or "EYEBROWS_FURROWED"
+(wh-question) -- from ml/features/facial_grammar.py's per-connection
+baseline calibrator. "NONE" also covers "no face detected" and "still
+calibrating"; the client can't tell those apart from this field alone, but
+none of them should be treated as a detected marker either way.
 """
 from __future__ import annotations
 
@@ -35,6 +44,7 @@ class PredictionMessage(BaseModel):
     gloss: str
     confidence: float
     is_final: bool = False
+    facial_grammar: str = "NONE"
 
 
 class ErrorMessage(BaseModel):

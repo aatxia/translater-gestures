@@ -49,6 +49,11 @@ class Settings(BaseSettings):
     ws_gloss_stability_frames: int = 5
     ws_gloss_confidence_threshold: float = 0.5
 
+    # --- Facial grammar markers (Phase 17: ml/features/facial_grammar.py) ---
+    ws_facial_calibration_frames: int = 30
+    ws_facial_raised_ratio: float = 0.25
+    ws_facial_furrowed_ratio: float = 0.25
+
     # --- MediaPipe (Phase 6-7 CV pipeline) ---
     mediapipe_models_dir: Path = REPO_ROOT / "models" / "mediapipe"
 

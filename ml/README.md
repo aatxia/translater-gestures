@@ -317,3 +317,54 @@ What this does and doesn't claim:
   spelled word as readable text (`frontend/lib/glossDisplay.ts` groups
   consecutive `FS_` chips into one "🔤 word" chip in `components/Transcript`
   and `components/Avatar`'s "no animation for" line).
+
+## Facial grammar / немануальні маркери (Phase 17)
+
+```
+ml/features/
+└── facial_grammar.py    # eyebrow-position non-manual grammar marker
+```
+
+Sign-language grammar isn't only manual: cross-linguistically (УЖМ
+included), a yes/no question is marked by raised eyebrows and a wh-question
+by furrowed/lowered eyebrows, with **no separate manual sign for "?" at
+all**. Without this, a recognized question would come out of Phase 12's
+`gloss_to_text` looking exactly like a statement.
+
+`facial_grammar.py` measures one real, well-documented signal -- eyebrow
+height relative to the eyes -- from the MediaPipe FaceMesh landmarks
+`ml/features/face.py` already selects. `BaselineCalibrator` learns each
+signer's own neutral-face gap over their first N frames with a detected
+face (proportions vary by person/camera framing, so one fixed threshold for
+everyone would be meaningless), then classifies later frames against it:
+
+```python
+from ml.features.facial_grammar import BaselineCalibrator, FacialGrammarMarker
+
+calibrator = BaselineCalibrator(calibration_frames=30)
+for face in normalized_face_landmarks_per_frame:
+    marker = calibrator.update(face)  # NONE while calibrating / no face / neutral
+    if marker == FacialGrammarMarker.EYEBROWS_RAISED:
+        ...  # yes/no question
+```
+
+This is a **deterministic geometric heuristic, not a trained classifier** --
+no annotated facial-grammar dataset exists to train or validate one against
+(Phase 8 still hasn't found a real УЖМ dataset at all). The ratio thresholds
+(`WS_FACIAL_RAISED_RATIO`/`WS_FACIAL_FURROWED_RATIO`, `.env`) are a
+documented starting point, not empirically calibrated.
+
+**Live integration** (`backend/websocket/handler.py`): every frame with a
+detected face feeds a per-connection `BaselineCalibrator`, independent of
+whether sign inference has a trained checkpoint. The resulting marker rides
+on every `PredictionMessage` (`"facial_grammar"`), and when a gloss is
+just-confirmed (Phase 11) while a marker is active, `gloss_to_text()`'s new
+`is_question=True` swaps the composed sentence's `.` for `?` -- e.g. a
+confirmed `TAK` with raised eyebrows becomes `[DEMO] Так?` instead of
+`[DEMO] Так.`. `text_to_gloss` (Phase 14, text→gloss) needs no change: it
+already strips `?`/`.`/etc. as trailing punctuation, since a *typed*
+question has no non-manual channel to detect in the first place.
+
+Frontend: `components/Translator/TranslatorView.tsx` shows a small badge
+("🤨 Брови підняті...") next to the live translation whenever the latest
+WebSocket message carries a non-`"NONE"` marker.
