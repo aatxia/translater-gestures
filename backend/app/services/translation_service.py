@@ -2,19 +2,22 @@
 TranslationService — abstraction over gloss-sequence -> natural Ukrainian text
 (and the reverse direction, text -> gloss sequence for the avatar).
 
-STATUS: interface only in Phase 2. The rule-based baseline (per master-prompt
-section 14/17) is real, buildable logic (no ML dependency) and will be
-implemented in Phase 12 (gloss->text) and Phase 14 (text->gloss) — deliberately
-scheduled there rather than stubbed early, so it can be built and tested
-alongside the gloss sequences it actually needs to handle.
+STATUS: both directions are real as of Phase 14. RuleBasedTranslationService
+delegates gloss_to_text() to ml/nlp/gloss_to_text.py (Phase 12) and
+text_to_gloss() to ml/nlp/text_to_gloss.py (Phase 14) -- genuine (if narrow,
+hand-authored lexicon) rule-based engines per master-prompt section 14/17,
+sharing one lexicon (ml/nlp/lexicon.py) so the two directions can never
+silently disagree about vocabulary.
 
-Once implemented, `RuleBasedTranslationService` will satisfy this interface,
-and later an HF-Transformers-backed implementation can replace it via
-`NLP_BACKEND=huggingface` in .env without touching callers.
+Later an HF-Transformers-backed implementation can replace either direction
+via `NLP_BACKEND=huggingface` in .env without touching callers.
 """
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+
+from ml.nlp.gloss_to_text import compose_sentence
+from ml.nlp.text_to_gloss import parse_gloss_sequence
 
 
 class NotConfiguredError(RuntimeError):
@@ -48,3 +51,20 @@ class NotConfiguredTranslationService(TranslationService):
             "Text-to-gloss NLP is not implemented yet (scheduled: Phase 14). "
             "See docs/architecture.md and PROJECT_STATUS.md."
         )
+
+
+class RuleBasedTranslationService(TranslationService):
+    """Phase 12 (gloss_to_text) + Phase 14 (text_to_gloss): both real
+    rule-based engines sharing ml/nlp/lexicon.py (see ml/nlp/gloss_to_text.py
+    and ml/nlp/text_to_gloss.py for exactly which glosses/words/patterns
+    they cover -- coverage is intentionally small, since no public
+    annotated УЖМ dataset exists yet to build a broader lexicon from). An
+    unrecognized gloss/word or an unsupported combination raises a clear
+    ValueError subclass rather than guessing.
+    """
+
+    def gloss_to_text(self, gloss_sequence: list[str]) -> str:
+        return compose_sentence(gloss_sequence)
+
+    def text_to_gloss(self, text: str) -> list[str]:
+        return parse_gloss_sequence(text)

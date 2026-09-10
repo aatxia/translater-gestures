@@ -1,6 +1,6 @@
 # PROJECT STATUS
 
-Останнє оновлення: Phase 11 complete.
+Останнє оновлення: Phase 16 complete.
 
 ## Що вже є
 
@@ -454,10 +454,232 @@ transformer/video_jepa залишаються заявленими в конфі
 `is_final=true`/`"final_prediction"` per-подію) — повний список поки не потрібен нікому, крім
 майбутнього Phase 12.
 
+## PHASE 12 — Gloss-to-text NLP (COMPLETE)
+
+`backend/app/services/translation_service.py::gloss_to_text()` тепер реальна (не наївний
+`' '.join()`) rule-based логіка, розділ 14/17 ТЗ:
+
+- `ml/nlp/gloss_to_text.py` — `compose_sentence()`: framework-agnostic граматичний рушій.
+  Відмінює іменники за відмінком, який вимагає дієслово (напр. `WANT` керує родовим
+  партитивом: "хочу **води**", `LIKE`/`HAVE` — знахідним), відмінює дієслово за особою
+  займенника (1sg/2sg/1pl), вставляє заперечення `не` перед дієсловом у правильній позиції
+  (незалежно від того, де в gloss-послідовності стояв gloss заперечення) — składає стандартний
+  укр. порядок слів, а не порядок жестів. Лексикон навмисно малий: реального gloss-словника
+  УЖМ ще нема (Phase 8), тож кожен gloss і кожен паттерн, які рушій приймає, явно перелічені в
+  модулі. Невідомий gloss → `UnknownGlossError`; відомі gloss, але непідтримана комбінація →
+  `UnsupportedPatternError` (обидва — `ValueError`) — чесна відмова замість вгадування.
+- `backend/app/services/translation_service.py` — `RuleBasedTranslationService` реалізує
+  `gloss_to_text()` через рушій; `text_to_gloss()` лишається `NotConfigured` до Phase 14.
+- `backend/websocket/handler.py` — для щойно **підтвердженого** (Phase 11, `is_final=true`)
+  жесту тепер намагається перекласти саме цей один gloss через `RuleBasedTranslationService`;
+  якщо лексикон його покриває (всі 5 demo-gloss — стендалон-слова, тож завжди покриває) —
+  клієнт бачить справжнє речення (`[DEMO] Привіт.`) замість сирої мітки (`[DEMO] PRIVIT`);
+  якщо `ValueError` (gloss/паттерн не в лексиконі) — тихо лишається сирий gloss-текст, без
+  падіння з'єднання.
+
+**Перевірено наживо:**
+- `pytest`: `ml/` — 97 passed (+16 `ml/tests/test_gloss_to_text.py`: усі 5 demo-стендалонів,
+  приклад `["I","WANT","WATER"]` → `"Я хочу води."` з докстрінга самого інтерфейсу, різні
+  займенники/дієслова/відмінки, заперечення, невідомий gloss, невідомий паттерн, порожня
+  послідовність, monkeypatch-тести на неповну відміну/дієвідміну); `backend/` — 23 passed
+  (+3 `test_translation_service.py`, оновлено WS-тест на реальний композиційний текст).
+  `ruff check` — чисто в обох пакетах.
+- **Реальний E2E, не мок**: натренований demo-checkpoint + живий `websockets`-клієнт проти
+  справжнього `uvicorn` (реальний MediaPipe, не stub): кадри 1-31 → `Buffering`, 31-34 →
+  interim `[DEMO] PRIVIT`, кадр 35 (підтвердження) → `{"type":"final_prediction",
+  "text":"[DEMO] Привіт.","is_final":true}` — справжнє речення замість сирого gloss.
+
+**Known limitations:** переклад працює лише для **одного** щойно підтвердженого gloss, не для
+всієї накопиченої `GlossSequenceAggregator.sequence` — переклад реальних багатослівних речень
+("Я хочу води.") через живий WS-потік ще не підключено: для цього потрібні (а) реальний
+багатослівний gloss-словник (Phase 8 — досі не існує) і (б) спосіб визначити межу **речення**,
+а не лише окремого жесту (окрема майбутня евристика, аналогічна Phase 11 для меж жесту).
+Лексикон — 3 займенники, 3 дієслова, 3 іменники + 5 demo-стендалонів; будь-який реальний gloss
+поза цим списком чесно відхиляється, а не вгадується.
+
+## PHASE 13 — Voice input (browser STT) (COMPLETE)
+
+Знайдено точне підтвердження в уже наявному коді: `backend/app/services/speech_service.py`
+(написаний завчасно в Phase 2) явно документує "SpeechRecognizer... Implemented in Phase 13
+only if/when a server-side STT provider... is configured" — за замовчуванням
+(`STT_PROVIDER=browser`) весь STT відбувається в браузері, backend узагалі не займається аудіо.
+Реальна робота Phase 13 — саме frontend:
+
+- `frontend/hooks/useSpeechRecognition.ts` — обгортка над браузерним Web Speech API
+  (`SpeechRecognition`/`webkitSpeechRecognition`), `lang="uk-UA"`, чесні стани
+  (`idle`/`listening`/`stopped`/`error`) з розпізнаванням конкретних причин помилки
+  (`not-allowed`→permission_denied, `no-speech`, `network`, `unsupported` якщо API взагалі
+  нема) — той самий підхід чесної обробки помилок, що і в `useCamera.ts` (Phase 4).
+- `frontend/components/VoiceInput/` — кнопка 🎤, статус, викликає `onTranscript(text)` при
+  фінальному розпізнаному тексті.
+- Підключено в `TranslatorView`: голосовий транскрипт заповнює те саме текстове поле, що й
+  ручне введення (Phase 14).
+
+**Перевірено наживо:** `vitest` — 34/34 passed (нові: `useSpeechRecognition.test.ts` (5),
+`VoiceInput.test.tsx` (2)), `tsc --noEmit` — 0 помилок, `eslint` — 0 помилок/warnings,
+`next build` — успішний production build.
+
+**Known limitations:** сервер-сайд STT (реальний `SpeechRecognizer` для `STT_PROVIDER != browser`)
+залишається `NotConfigured` — за дизайном, доки не з'явиться конкретний провайдер, який
+дійсно потрібно підключити.
+
+## PHASE 14 — Text-to-gloss NLP + UI (COMPLETE)
+
+Зворотний напрямок до Phase 12, і повне UI-підключення "Текст / Голос → Жести":
+
+- `ml/nlp/lexicon.py` — спільний словник (займенники/дієслова/іменники/стендалони) винесено
+  окремо від `gloss_to_text.py`, щоб Phase 12 (gloss→текст) і Phase 14 (текст→gloss) читали
+  **той самий** словник і ніколи не розійшлись у лексиці.
+- `ml/nlp/text_to_gloss.py` — `parse_gloss_sequence()`: реальний (не заглушка) парсер.
+  Будує reverse-index (кожна відмінена/дієвідмінена форма слова → gloss) один раз при
+  імпорті; заперечувальна частка "не" мапиться на `NOT` **на тому самому місці**, де вона
+  стояла (українське заперечення вже препозитивне, так само як і в gloss-конвенції Phase 12
+  — тож обидва напрямки узгоджені без додаткового реордерингу). Стендалон-фрази (напр.
+  "будь ласка") розпізнаються як ціла фраза перед пословним розбором. Невідоме слово →
+  `UnrecognizedWordError` з точним словом і повним текстом — чесна відмова, не вгадування.
+  **Round-trip тест**: усе, що `parse_gloss_sequence` розбирає, `compose_sentence` збирає
+  назад в ідентичний текст — гарантія, що два напрямки узгоджені за побудовою.
+- `backend/app/services/translation_service.py` — `RuleBasedTranslationService.text_to_gloss()`
+  тепер реальний виклик рушія (замість `NotConfiguredError`).
+- `backend/app/api/routes/translate.py` + `app/schemas/translate.py` — новий
+  `POST /translate/text-to-gloss`: `{"text": "..."}` → `{"gloss_sequence": [...]}`, або
+  `422` з чітким `detail`, якщо слово не розпізнано.
+- Frontend: `components/TextInput/` (поле + кнопка "Перекласти"), `components/Transcript/`
+  (показує gloss-послідовність як токени, з чесним поясненням "аватар — Phase 15, поки лише
+  текст"), обидва підключені в `TranslatorView` разом з `VoiceInput` (Phase 13) — голос і
+  текст ведуть в одне поле, кнопка викликає `POST /translate/text-to-gloss` через
+  `lib/api.ts::textToGloss()`.
+
+**Перевірено наживо:**
+- `pytest`: `ml/` — 124 passed (+26: `test_text_to_gloss.py` включно з round-trip тестами
+  для кожного підтримуваного речення); `backend/` — 28 passed (+5: `test_translate_route.py`,
+  оновлений `test_translation_service.py`). `ruff check` — чисто.
+- `vitest`: 34/34 passed (+10 нових: `TextInput.test.tsx`, `Transcript.test.tsx`, плюс
+  інтеграційний тест у `TranslatorView.test.tsx`, що вводить текст, тисне "Перекласти" і
+  бачить реальні gloss-токени). `tsc --noEmit`, `eslint`, `next build` — усі чисті.
+- **Реальний E2E через живий `uvicorn`, не мок**: `curl POST /translate/text-to-gloss`:
+  `"Я хочу води."` → `{"gloss_sequence":["I","WANT","WATER"]}`; `"Привіт."` →
+  `{"gloss_sequence":["PRIVIT"]}`; `"Я не хочу води."` → `{"gloss_sequence":["I","NOT","WANT","WATER"]}`;
+  `"Я хочу кавун."` → `422 {"detail":"Unrecognized word 'кавун'..."}`.
+
+**Known limitations:** той самий вузький лексикон, що й Phase 12 (3 займенники, 3 дієслова,
+3 іменники, 5 стендалонів) — реальний широкий словник чекає на реальний датасет УЖМ (Phase 8).
+Порядок gloss = порядок слів у введеному тексті, без переупорядкування в граматику жестової
+мови (topic-comment тощо) — задокументоване обмеження, не помилка.
+
+## PHASE 15 — 3D Avatar (COMPLETE)
+
+Three.js-аватар, що анімує gloss-послідовність з Phase 14 (`POST /translate/text-to-gloss`)
+у видимі рухи процедурної ляльки. Замінив плейсхолдер "буде доданий у Phase 15" в `TranslatorView`.
+
+- `frontend/components/Avatar/poses.ts` — `JointRotations` (голова, плечі, лікті),
+  `NEUTRAL_POSE`, та `GLOSS_POSES`: рукописні (hand-authored) демо-жести лише для 5 glosses
+  демо-датасету (`PRIVIT`→хвиля рукою, `TAK`→кивок, `NI`→похитування головою,
+  `DYAKUYU`/`BUD_LASKA`→руки разом). **Це НЕ справжні жести УЖМ** — жодного motion-capture чи
+  референсних даних для реальних жестів немає (Phase 8: публічного датасету УЖМ не знайдено).
+  `poseForGloss()` для будь-якого іншого gloss повертає `null` (чесна відсутність анімації),
+  а не вгадану позу.
+- `frontend/components/Avatar/player.ts` — `GlossPlayer`: чиста (без Three.js/DOM) логіка
+  послідовного відтворення поз — лерп-перехід (`TRANSITION_SECONDS=0.35s`) до цільової пози,
+  утримання (`HOLD_SECONDS=1.1s`, з синусоїдним "wobble" для жестів на кшталт хвилі рукою),
+  перехід до наступного gloss. `unanimatedGlosses` — список glosses без визначеної пози
+  (утримують `NEUTRAL_POSE`, а не вигадану анімацію).
+- `frontend/components/Avatar/puppet.ts` — `buildPuppet()`: процедурна лялька з примітивів
+  Three.js (сфера-голова, циліндри тулуб/руки), без rigged/skinned GLTF-моделі. Ієрархія
+  `Object3D`-груп для шарнірів (плече → лікоть, вкладені) — `applyRotations()` мапить
+  `JointRotations` на обертання відповідних pivot-груп.
+- `frontend/components/Avatar/Avatar.tsx` — React-компонент: `detectWebglSupport()` одноразово
+  перевіряє підтримку WebGL через одноразовий throwaway `<canvas>` (без setState в ефекті —
+  визначається лінивим ініціалізатором `useState`), і якщо непідтримується — чесне
+  повідомлення "WebGL не підтримується цим браузером" замість порожнього/зламаного canvas.
+  Інакше: `THREE.WebGLRenderer` на реальному `<canvas>`, `requestAnimationFrame`-цикл викликає
+  `GlossPlayer.update(delta)` щокадру, показує видиму позначку "⚠ DEMO — умовні жести, не
+  справжня УЖМ" і (якщо є) список glosses без анімації.
+- `frontend/components/Translator/TranslatorView.tsx` — `<Avatar glossSequence={...}>`
+  підключено до **обох** джерел gloss-послідовності: результату `text-to-gloss` перекладу
+  (Phase 14, текст/голос → жести) **і** підтверджених знаків з камери (Phase 11
+  `final_prediction`, накопичуються в один список по мірі надходження) — яке джерело
+  спрацювало останнім, те й анімує аватар.
+- `backend/websocket/protocol.py` + `handler.py` — `PredictionMessage` отримало нове поле
+  `gloss` (сирий передбачений label, напр. `"TAK"`), окремо від `text` (composed-речення з
+  Phase 12). Це те, що фронтенд тепер програє на аватарі при кожному `final_prediction`
+  — ніколи не проміжний (`is_final=false`) здогад.
+- Видалено `backend/app/services/avatar_service.py` (`AvatarService`/`NotConfiguredAvatarService`,
+  заскафолжено ще до Phase 15 в очікуванні *бекенд*-сервісу gloss→animation-ID) разом з
+  тестом `test_avatar_service_refuses_mapping_before_phase_15` — мапінг виявився простими
+  статичними даними без потреби в мережевому виклику, тож живе повністю на клієнті
+  (`components/Avatar/poses.ts`), а не як окремий бекенд-ендпоінт.
+
+**Перевірено наживо:**
+- `vitest`: 53/53 passed (+19 нових: `poses.test.ts`, `player.test.ts` — таймінг переходу/
+  утримання/wobble/переходу між glosses, `puppet.test.ts` — ієрархія шарнірів і мапінг
+  обертань, `Avatar.test.tsx` — WebGL-fallback у jsdom, `TranslatorView.test.tsx` — новий тест
+  на `final_prediction` → аватар). `tsc --noEmit`, `eslint`, `next build` — усі чисті.
+- `three@0.185.1` + `@types/three@0.185.4` додані в `frontend/package.json`.
+- `pytest`: `backend/` — 27 passed (−1 обсолетний тест `avatar_service`, +0 нових — існуючі
+  тести вже покривали `PredictionMessage`). `ruff check` — чисто.
+
+**Known limitations:** пози — лише 5 рукописних демо-жестів (не справжня УЖМ, задокументовано
+в коді і в UI через позначку "DEMO"); реальні жести жестової мови вимагають або справжнього
+motion-capture/анімаційного датасету, або rigged 3D-моделі з реальними даними про рухи рук —
+жодного з них ще немає (Phase 8). Коли обидва джерела (камера і текст/голос) активні одночасно,
+аватар показує лише те, що прийшло останнім, а не окрему чергу для кожного джерела.
+
+## PHASE 16 — Fingerspelling / дактилологія (COMPLETE)
+
+Реальні глухі мовці не просто відмовляються від слова поза словником — вони розкладають
+його по літерах стандартною дактильною абеткою. Це саме те, чого не вистачало Phase 12/14:
+раніше будь-яке слово поза крихітним лексиконом (3 займенники, 3 дієслова, 3 іменники, 5
+стендалонів) викликало жорстку відмову (`UnrecognizedWordError`/422).
+
+- `ml/nlp/fingerspelling.py` (NEW) — усі 33 літери сучасної української абетки, кожна →
+  gloss-токен `FS_<ЛІТЕРА>`. `spell_word()` (слово → список токенів), `despell()` (зворотне),
+  `is_fingerspell_gloss()`. Апостроф/дефіс/цифри/латиниця навмисно виключені (немає дактильного
+  жесту) — `UnspellableCharacterError` з точним символом.
+- `ml/nlp/text_to_gloss.py` — коли слово не знайдено в reverse-index лексикону, замість
+  негайної `UnrecognizedWordError` тепер намагається `spell_word()`; помилка лишається, але
+  тільки якщо слово має символ без дактильного жесту (латиниця, цифри тощо).
+- `ml/nlp/gloss_to_text.py` — `_group_units()` згортає послідовний прогін `FS_`-токенів в один
+  "fingerspell"-юніт перед композицією: як окреме слово-речення (`compose_sentence(["FS_О",
+  ...]) == "Оксана."`), так і як об'єкт у SVO-патерні (`["I","LIKE",<FS...>]`) — вставляється
+  як є, капіталізовано, **без** відмінювання під керований дієсловом відмінок (немає реальних
+  даних про відмінювання довільних імен — задокументоване й протестоване обмеження).
+- Frontend: `frontend/lib/glossDisplay.ts` (NEW) — `groupGlossesForDisplay()` згортає прогін
+  `FS_`-токенів в один читабельний чіп "🔤 Слово" замість шереги окремих літер; використано в
+  `components/Transcript` (кольором відрізняється від звичайних gloss-чіпів) і
+  `components/Avatar`'s рядку "Немає анімації для: ...".
+- **Аватар НЕ анімує дактилологію**: лялька (Phase 15) не має геометрії пальців, тож не може
+  показати 33 візуально різні хендшейпи — вигадування їх порушило б те саме правило "no fake
+  AI", що й сфабрикована ML-модель. `FS_`-glosses просто не мають визначеної пози (як і
+  будь-який інший немапований gloss) — аватар чесно тримає нейтральну позу.
+- Виправлено застарілий рядок у `components/Transcript` ("Three.js avatar (Phase 15) ще не
+  реалізований") — не оновлювався відколи Phase 15 фактично завершився.
+
+**Перевірено наживо:**
+- `pytest`: `ml/` — 130+ passed (Phase 12/14 тести без torch/yaml залежностей; +12 нових у
+  `test_fingerspelling.py`, +6 у `test_text_to_gloss.py`, +3 у `test_gloss_to_text.py`, разом з
+  оновленим round-trip параметром для "Оксана."/"Я люблю Оксану."). `backend/` — тести
+  `test_translation_service.py`/`test_translate_route.py` оновлено: приклад `"Я хочу кавун."`
+  тепер повертає `200` з дактильним fallback замість `422` (документована зміна поведінки);
+  новий приклад `"Я хочу pizza."` (латиниця — справді нерозпізнавано) демонструє `422`. `ruff
+  check` — чисто.
+- `vitest`: 58/58 passed (+5 нових: `glossDisplay.test.ts`, +1 у `Transcript.test.tsx`).
+  `tsc --noEmit`, `eslint`, `next build` — усі чисті.
+
+**Known limitations:** дактилологія не анімується на аватарі (вище); капіталізація для
+fingerspell-слова завжди "перша літера велика" при композиції назад (типова конвенція для
+власних імен) — для звичайного (не власного) слова поза лексиконом, введеного з малої літери
+(напр. "кавун"), зворотна композиція поверне "Кавун" з великої, що НЕ ідентично оригінальному
+тексту символ-у-символ — задокументована й протестована відома різниця, не тиха помилка.
+Дактильний fallback працює тільки в `text_to_gloss` (текст → gloss); `gloss_to_text` для
+одиничного підтвердженого знаку з камери (Phase 10-11 WebSocket) все ще не викликає
+fingerspelling — там немає багатослівного речення для розбору.
+
 ## Наступна фаза
 
-**PHASE 12 — Gloss-to-text NLP**: `backend/app/services/translation_service.py::gloss_to_text()`
-(вже заявлено в docstring цього файлу як Phase 12) — rule-based переклад послідовності gloss
-(`GlossSequenceAggregator.sequence`, тепер реально накопичується в Phase 11) у природне
-українське речення (відмінки/число/рід/порядок слів, розділ 14/17 ТЗ), а не наївний
-`' '.join()`. `RuleBasedTranslationService` замінить `NotConfiguredTranslationService`.
+Наступна за `README.md`'s roadmap — **Phase 17: Face/facial grammar** (немануальні
+компоненти УЖМ — міміка, рухи брів/голови, що несуть граматичне значення: питальні
+речення, заперечення, топікалізація). Реалізація вимагатиме розширення `ml/features/face.py`
+(вже витягує 24 лицьових landmarks) до окремої класифікації граматичної мімки — поки що не
+почато. Як і завжди, реальна якість розпізнавання й надалі обмежена відсутністю реального
+датасету УЖМ (Phase 8).

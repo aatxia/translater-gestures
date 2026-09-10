@@ -6,9 +6,15 @@ Client -> Server:
 
 Server -> Client:
     {"type": "connection", "status": "ok" | "closed"}
-    {"type": "prediction", "text": "...", "confidence": 0.92, "is_final": false}
-    {"type": "final_prediction", "text": "...", "confidence": 0.95, "is_final": true}
+    {"type": "prediction", "text": "...", "gloss": "TAK", "confidence": 0.92, "is_final": false}
+    {"type": "final_prediction", "text": "...", "gloss": "TAK", "confidence": 0.95, "is_final": true}
     {"type": "error", "message": "..."}
+
+"gloss" (Phase 15) is the raw predicted sign label for this frame -- the
+same value "text" is derived from via Phase 12's gloss->text composition
+(or, if the lexicon doesn't cover it, "text" *is* the raw gloss). It's what
+drives the 3D avatar (frontend/components/Avatar/): the frontend only
+plays a gloss once its final_prediction confirms it, never an interim guess.
 """
 from __future__ import annotations
 
@@ -26,6 +32,7 @@ class FrameMessage(BaseModel):
 class PredictionMessage(BaseModel):
     type: Literal["prediction", "final_prediction"] = "prediction"
     text: str
+    gloss: str
     confidence: float
     is_final: bool = False
 

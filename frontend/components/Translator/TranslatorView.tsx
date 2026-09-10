@@ -1,9 +1,15 @@
 "use client";
 
-import { useEffect } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Avatar } from "@/components/Avatar";
 import { Camera } from "@/components/Camera";
 import { ConnectionStatus } from "@/components/ConnectionStatus";
+import { TextInput } from "@/components/TextInput";
+import { Transcript } from "@/components/Transcript";
+import { VoiceInput } from "@/components/VoiceInput";
 import { useWebSocket, type WebSocketStatus } from "@/hooks/useWebSocket";
+import { ApiError, textToGloss } from "@/lib/api";
+import type { TranslationState } from "@/types/translation";
 
 const WS_STATUS_LABEL: Record<WebSocketStatus, string> = {
   idle: "Не з'єднано",
@@ -15,12 +21,40 @@ const WS_STATUS_LABEL: Record<WebSocketStatus, string> = {
 
 export function TranslatorView(): React.ReactElement {
   const { status, lastMessage, connect, disconnect, sendFrame } = useWebSocket();
+  const [inputText, setInputText] = useState("");
+  const [translationState, setTranslationState] = useState<TranslationState>({ status: "idle" });
+  // Avatar (Phase 15) is driven by whichever source most recently produced a
+  // gloss sequence: a Phase 14 text/voice translation, or a live confirmed
+  // sign from the camera (Phase 11's final_prediction, accumulated here).
+  const [avatarGlossSequence, setAvatarGlossSequence] = useState<string[]>([]);
+  const recognizedGlossesRef = useRef<string[]>([]);
 
   useEffect(() => {
     connect();
     return () => disconnect();
     // Connect once on mount; connect/disconnect identities are stable (useCallback).
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (lastMessage?.type === "final_prediction") {
+      recognizedGlossesRef.current = [...recognizedGlossesRef.current, lastMessage.gloss];
+      setAvatarGlossSequence(recognizedGlossesRef.current);
+    }
+  }, [lastMessage]);
+
+  const handleTranslate = useCallback(async (text: string) => {
+    setTranslationState({ status: "loading" });
+    try {
+      const result = await textToGloss(text);
+      setTranslationState({ status: "success", glossSequence: result.gloss_sequence });
+      setAvatarGlossSequence(result.gloss_sequence);
+    } catch (err) {
+      setTranslationState({
+        status: "error",
+        message: err instanceof ApiError ? err.message : "Не вдалося перекласти текст.",
+      });
+    }
   }, []);
 
   const translationText =
@@ -64,20 +98,15 @@ export function TranslatorView(): React.ReactElement {
         <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">
           Текст / Голос → Жести
         </h2>
-        <div className="flex gap-3">
-          <input
-            type="text"
-            disabled
-            placeholder="Введіть текст... (буде активовано в Phase 14)"
-            className="flex-1 rounded-lg border border-slate-200 bg-slate-50 px-4 py-2 text-sm text-slate-400 disabled:cursor-not-allowed"
+        <div className="flex flex-col gap-3">
+          <VoiceInput onTranscript={setInputText} />
+          <TextInput
+            value={inputText}
+            onChange={setInputText}
+            onSubmit={(text) => void handleTranslate(text)}
+            disabled={translationState.status === "loading"}
           />
-          <button
-            type="button"
-            disabled
-            className="rounded-lg bg-slate-200 px-5 py-2 text-sm font-medium text-slate-400 disabled:cursor-not-allowed"
-          >
-            Перекласти
-          </button>
+          <Transcript state={translationState} />
         </div>
       </section>
 
@@ -85,9 +114,7 @@ export function TranslatorView(): React.ReactElement {
         <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">
           3D Avatar
         </h2>
-        <div className="flex h-40 items-center justify-center rounded-xl bg-slate-100 text-sm text-slate-400">
-          Three.js avatar буде доданий у Phase 15
-        </div>
+        <Avatar glossSequence={avatarGlossSequence} />
       </section>
     </div>
   );

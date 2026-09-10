@@ -5,10 +5,13 @@ typed error instead of returning a plausible-looking but fabricated result.
 """
 import pytest
 
-from app.services.avatar_service import NotConfiguredAvatarService
-from app.services.avatar_service import NotConfiguredError as AvatarNotConfiguredError
-from app.services.inference_service import MLNotReadyError, NotConfiguredInferenceService
-from app.services.translation_service import NotConfiguredError as TranslationNotConfiguredError
+from app.services.inference_service import (
+    MLNotReadyError,
+    NotConfiguredInferenceService,
+)
+from app.services.translation_service import (
+    NotConfiguredError as TranslationNotConfiguredError,
+)
 from app.services.translation_service import NotConfiguredTranslationService
 
 
@@ -29,9 +32,3 @@ def test_translation_service_refuses_text_to_gloss_before_phase_14():
     service = NotConfiguredTranslationService()
     with pytest.raises(TranslationNotConfiguredError):
         service.text_to_gloss("Я хочу води.")
-
-
-def test_avatar_service_refuses_mapping_before_phase_15():
-    service = NotConfiguredAvatarService()
-    with pytest.raises(AvatarNotConfiguredError):
-        service.gloss_sequence_to_animations(["WATER"])

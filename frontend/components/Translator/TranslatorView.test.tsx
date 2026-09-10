@@ -1,4 +1,5 @@
 import { act, render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { TranslatorView } from "./TranslatorView";
 
@@ -62,5 +63,61 @@ describe("TranslatorView", () => {
     await waitFor(() => {
       expect(screen.getByText("ML pipeline not implemented yet")).toBeInTheDocument();
     });
+  });
+
+  it("feeds a confirmed camera gloss (final_prediction) into the avatar", async () => {
+    render(<TranslatorView />);
+
+    await waitFor(() => expect(lastInstance).not.toBeNull());
+
+    act(() => {
+      lastInstance?.onmessage?.({
+        data: JSON.stringify({
+          type: "final_prediction",
+          text: "[DEMO] Так.",
+          gloss: "TAK",
+          confidence: 0.91,
+          is_final: true,
+        }),
+      } as MessageEvent<string>);
+    });
+
+    // The live translation panel reflects the confirmed message, confirming
+    // it flowed through useWebSocket -> TranslatorView -> both the panel and
+    // the Avatar's glossSequence prop (Avatar itself falls back to an honest
+    // "WebGL не підтримується" message in jsdom, which has no real GL
+    // context -- the gloss-driven pose is covered by
+    // components/Avatar/player.test.ts, not re-tested here).
+    await waitFor(() => {
+      expect(screen.getByText("[DEMO] Так.")).toBeInTheDocument();
+    });
+    expect(screen.getByText(/WebGL не підтримується/)).toBeInTheDocument();
+  });
+
+  it("translates typed text into a gloss sequence via the Phase 14 API", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        if (url.toString().endsWith("/translate/text-to-gloss")) {
+          return {
+            ok: true,
+            json: async () => ({ gloss_sequence: ["I", "WANT", "WATER"] }),
+          };
+        }
+        throw new Error("no backend in this test");
+      }),
+    );
+    const user = userEvent.setup();
+
+    render(<TranslatorView />);
+
+    await user.type(screen.getByPlaceholderText(/Введіть текст/), "Я хочу води.");
+    await user.click(screen.getByRole("button", { name: "Перекласти" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("WATER")).toBeInTheDocument();
+    });
+    expect(screen.getByText("I")).toBeInTheDocument();
+    expect(screen.getByText("WANT")).toBeInTheDocument();
   });
 });

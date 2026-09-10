@@ -12,7 +12,8 @@
 - **Backend**: Python, FastAPI, WebSocket, Pydantic
 - **ML/CV**: MediaPipe (hands/pose/face landmarks), PyTorch (BiLSTM/GRU baseline → Transformer),
   Hugging Face Transformers (NLP gloss→text), Video-JEPA (experimental)
-- **Avatar**: Three.js + предзадані анімації, мапінг gloss → animation ID
+- **Avatar**: Three.js + предзадані анімації, gloss → pose мапінг живе на клієнті
+  (`frontend/components/Avatar/poses.ts`), без окремого backend-сервісу
 - **Infra**: Docker / docker-compose (з Phase 2+)
 
 ## Структура репозиторію
@@ -62,12 +63,14 @@ Frontend буде доступний на `http://localhost:3000`.
 
 ### ML — dataset, training, inference
 
-Preprocessing pipeline (MediaPipe landmark extraction, normalization,
-augmentation) is ready — see [`ml/README.md`](ml/README.md) for setup and
-usage. Dataset pipeline and model training are not implemented yet
-(see `PROJECT_STATUS.md`). Тренування моделей передбачається на Google Colab
-(GPU), checkpoint переноситься в `models/checkpoints/` і використовується
-локально через `SignRecognizer`.
+Full pipeline (preprocessing, dataset, training, real-time inference, gloss
+aggregation, gloss↔text NLP, fingerspelling) is implemented end-to-end — see
+[`ml/README.md`](ml/README.md) for setup and usage. Real recognition quality
+is still blocked on a real annotated УЖМ dataset (Phase 8 found none public;
+everything runs on a clearly-labeled DEMO/synthetic dataset until one
+exists — see `PROJECT_STATUS.md`). Тренування моделей передбачається на
+Google Colab (GPU), checkpoint переноситься в `models/checkpoints/` і
+використовується локально через `SignRecognizer`.
 
 ## Roadmap (Phases)
 
@@ -80,16 +83,16 @@ usage. Dataset pipeline and model training are not implemented yet
 | 5 | WebSocket | ✅ Done |
 | 6 | MediaPipe preprocessing | ✅ Done |
 | 7 | Landmark extraction | ✅ Done |
-| 8 | Dataset pipeline | ⏳ Next |
-| 9 | Baseline ML model | ⏳ |
-| 10 | Real-time inference | ⏳ |
-| 11 | Sign → gloss | ⏳ |
-| 12 | Gloss → Ukrainian NLP | ⏳ |
-| 13 | Speech-to-text | ⏳ |
-| 14 | Text → gloss | ⏳ |
-| 15 | Avatar | ⏳ |
-| 16 | Fingerspelling | ⏳ |
-| 17 | Face/facial grammar | ⏳ |
+| 8 | Dataset pipeline | ✅ Done (demo/synthetic only -- no real УЖМ dataset found) |
+| 9 | Baseline ML model | ✅ Done |
+| 10 | Real-time inference | ✅ Done |
+| 11 | Sign → gloss | ✅ Done |
+| 12 | Gloss → Ukrainian NLP | ✅ Done |
+| 13 | Speech-to-text | ✅ Done (browser Web Speech API) |
+| 14 | Text → gloss | ✅ Done |
+| 15 | Avatar | ✅ Done (procedural puppet, placeholder poses) |
+| 16 | Fingerspelling | ✅ Done (Ukrainian dactyl alphabet, text↔gloss fallback) |
+| 17 | Face/facial grammar | ⏳ Next |
 | 18 | Transformer / advanced model | ⏳ |
 | 19 | Video-JEPA experiment | ⏳ |
 | 20 | Evaluation | ⏳ |
