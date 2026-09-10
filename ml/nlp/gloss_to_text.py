@@ -25,6 +25,12 @@ or filling the object slot of the SVO pattern. Spelling is caseless/formless
 (exactly the letters that were spelled, capitalized), never Ukrainian-
 declined into the verb's governed case the way a lexicon NOUN is -- there's
 no real declension data for arbitrary fingerspelled words to draw on.
+
+Phase 17: `is_question` swaps the trailing "." for "?" -- sign language
+questions are marked non-manually (raised eyebrows for yes/no, furrowed for
+wh-, section 19), never by a separate manual gloss, so there's no "?" gloss
+token for a caller to include. See ml/features/facial_grammar.py, which
+detects this from face landmarks; the caller decides whether it applies.
 """
 from __future__ import annotations
 
@@ -79,22 +85,25 @@ def _group_units(gloss_sequence: list[str]) -> list[tuple[str, str]]:
     return units
 
 
-def compose_sentence(gloss_sequence: list[str]) -> str:
+def compose_sentence(gloss_sequence: list[str], *, is_question: bool = False) -> str:
     """УЖМ gloss sequence -> natural Ukrainian sentence. See module
     docstring for exactly which glosses/patterns are supported; anything
-    else raises UnknownGlossError or UnsupportedPatternError."""
+    else raises UnknownGlossError or UnsupportedPatternError. `is_question`
+    (Phase 17) ends the sentence with "?" instead of "." -- pass it when a
+    non-manual question marker was detected alongside these glosses."""
     if not gloss_sequence:
         raise ValueError("gloss_sequence must not be empty")
 
+    terminator = "?" if is_question else "."
     units = _group_units(gloss_sequence)  # raises UnknownGlossError first
     poses = [pose for pose, _ in units]
 
     # Pattern: a single standalone word (interjection/particle, or a fully
     # fingerspelled word on its own -- e.g. someone spelling just a name).
     if len(units) == 1 and poses[0] == "standalone":
-        return STANDALONE[units[0][1]].text.capitalize() + "."
+        return STANDALONE[units[0][1]].text.capitalize() + terminator
     if len(units) == 1 and poses[0] == "fingerspell":
-        return units[0][1].capitalize() + "."
+        return units[0][1].capitalize() + terminator
 
     # Pattern: [PRONOUN, (NOT), VERB, (NOUN | fingerspelled word)?] -- SVO
     # with optional preverbal negation.
@@ -116,7 +125,7 @@ def compose_sentence(gloss_sequence: list[str]) -> str:
             predicate = f"не {predicate}"
 
         if len(tokens) == 2:
-            return f"{pronoun.lemma} {predicate}."
+            return f"{pronoun.lemma} {predicate}{terminator}"
 
         if poses[2] == "fingerspell":
             object_form = tokens[2][1].capitalize()
@@ -132,7 +141,7 @@ def compose_sentence(gloss_sequence: list[str]) -> str:
             raise UnsupportedPatternError(
                 f"Expected a noun (or fingerspelled word) after the verb, got gloss {tokens[2][1]!r}."
             )
-        return f"{pronoun.lemma} {predicate} {object_form}."
+        return f"{pronoun.lemma} {predicate} {object_form}{terminator}"
 
     raise UnsupportedPatternError(
         f"No composition rule matches gloss sequence {gloss_sequence!r} "

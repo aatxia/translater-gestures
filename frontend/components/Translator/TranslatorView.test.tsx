@@ -78,6 +78,7 @@ describe("TranslatorView", () => {
           gloss: "TAK",
           confidence: 0.91,
           is_final: true,
+          facial_grammar: "NONE",
         }),
       } as MessageEvent<string>);
     });
@@ -92,6 +93,30 @@ describe("TranslatorView", () => {
       expect(screen.getByText("[DEMO] Так.")).toBeInTheDocument();
     });
     expect(screen.getByText(/WebGL не підтримується/)).toBeInTheDocument();
+    expect(screen.queryByText(/Брови/)).not.toBeInTheDocument();
+  });
+
+  it("shows a question-marker badge (Phase 17) when eyebrows are raised", async () => {
+    render(<TranslatorView />);
+
+    await waitFor(() => expect(lastInstance).not.toBeNull());
+
+    act(() => {
+      lastInstance?.onmessage?.({
+        data: JSON.stringify({
+          type: "final_prediction",
+          text: "[DEMO] Так?",
+          gloss: "TAK",
+          confidence: 0.91,
+          is_final: true,
+          facial_grammar: "EYEBROWS_RAISED",
+        }),
+      } as MessageEvent<string>);
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText(/Брови підняті/)).toBeInTheDocument();
+    });
   });
 
   it("translates typed text into a gloss sequence via the Phase 14 API", async () => {

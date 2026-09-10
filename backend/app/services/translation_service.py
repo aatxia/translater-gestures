@@ -26,10 +26,12 @@ class NotConfiguredError(RuntimeError):
 
 class TranslationService(ABC):
     @abstractmethod
-    def gloss_to_text(self, gloss_sequence: list[str]) -> str:
+    def gloss_to_text(self, gloss_sequence: list[str], *, is_question: bool = False) -> str:
         """Gloss sequence (e.g. ['I', 'WANT', 'WATER']) -> natural Ukrainian
         sentence (e.g. 'Я хочу води.'), applying case/number/gender/word-order
-        rules -- NOT a naive ' '.join(). Implemented in Phase 12."""
+        rules -- NOT a naive ' '.join(). Implemented in Phase 12. `is_question`
+        (Phase 17) ends the sentence with "?" -- pass it when a non-manual
+        question marker (ml/features/facial_grammar.py) was detected."""
         raise NotImplementedError
 
     @abstractmethod
@@ -40,7 +42,7 @@ class TranslationService(ABC):
 
 
 class NotConfiguredTranslationService(TranslationService):
-    def gloss_to_text(self, gloss_sequence: list[str]) -> str:
+    def gloss_to_text(self, gloss_sequence: list[str], *, is_question: bool = False) -> str:
         raise NotConfiguredError(
             "Gloss-to-text NLP is not implemented yet (scheduled: Phase 12). "
             "See docs/architecture.md and PROJECT_STATUS.md."
@@ -63,8 +65,8 @@ class RuleBasedTranslationService(TranslationService):
     ValueError subclass rather than guessing.
     """
 
-    def gloss_to_text(self, gloss_sequence: list[str]) -> str:
-        return compose_sentence(gloss_sequence)
+    def gloss_to_text(self, gloss_sequence: list[str], *, is_question: bool = False) -> str:
+        return compose_sentence(gloss_sequence, is_question=is_question)
 
     def text_to_gloss(self, text: str) -> list[str]:
         return parse_gloss_sequence(text)

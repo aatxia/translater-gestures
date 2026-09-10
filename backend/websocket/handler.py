@@ -24,6 +24,13 @@ sequence -- most frames are still interim ("prediction", is_final=False);
 a "final_prediction" (is_final=True) fires only when the same gloss has
 been predicted `WS_GLOSS_STABILITY_FRAMES` times in a row above
 `WS_GLOSS_CONFIDENCE_THRESHOLD`.
+
+Facial grammar (Phase 17): every frame with a detected face is fed to a
+per-connection BaselineCalibrator (ml/features/facial_grammar.py) --
+independent of whether sign inference has a trained checkpoint, since it
+serves a separate purpose. Once calibrated, its eyebrow-position marker
+rides along on every PredictionMessage ("facial_grammar"), and flips a
+just-confirmed gloss's composed text to a question ("?" instead of ".").
 """
 from __future__ import annotations
 
@@ -33,6 +40,7 @@ import time
 from collections import deque
 
 from fastapi import WebSocket, WebSocketDisconnect
+from ml.features.facial_grammar import BaselineCalibrator, FacialGrammarMarker
 from ml.features.feature_vector import (
     FeatureConfig,
     build_feature_vector,
@@ -117,6 +125,14 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
         stability_frames=settings.ws_gloss_stability_frames,
         confidence_threshold=settings.ws_gloss_confidence_threshold,
     )
+    # Per-connection: calibrates against this signer's own neutral face,
+    # then classifies eyebrow position into a non-manual grammar marker
+    # (Phase 17 -- see ml/features/facial_grammar.py).
+    facial_calibrator = BaselineCalibrator(
+        calibration_frames=settings.ws_facial_calibration_frames,
+        raised_ratio=settings.ws_facial_raised_ratio,
+        furrowed_ratio=settings.ws_facial_furrowed_ratio,
+    )
 
     try:
         while True:
@@ -187,6 +203,15 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
             raw_landmarks = await asyncio.to_thread(extractor.extract, decoded_frame)
             normalized = normalize_frame(raw_landmarks)
 
+            # Calibrates/classifies regardless of ML readiness below -- an
+            # honest FacialGrammarMarker.NONE when no face was detected at
+            # all, never a guess from zero-filled landmarks.
+            facial_marker = (
+                facial_calibrator.update(normalized.face)
+                if normalized.present["face"]
+                else FacialGrammarMarker.NONE
+            )
+
             feature_config = FeatureConfig(
                 hands=settings.features_hands,
                 pose=settings.features_pose,
@@ -247,8 +272,14 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
                 # Ukrainian sentence when the (intentionally small) rule-based
                 # lexicon covers it; otherwise keep the raw gloss text rather
                 # than guessing a composition -- see ml/nlp/gloss_to_text.py.
+                # Phase 17: a concurrent eyebrow marker makes it a question --
+                # written Ukrainian uses "?" for both yes/no and wh-questions,
+                # so either marker flips the terminator the same way.
                 try:
-                    composed = translation_service.gloss_to_text([prediction.sign])
+                    composed = translation_service.gloss_to_text(
+                        [prediction.sign],
+                        is_question=facial_marker != FacialGrammarMarker.NONE,
+                    )
                     display_text = f"[DEMO] {composed}" if inference_service.is_demo_mode else composed
                 except ValueError:
                     pass
@@ -259,6 +290,7 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
                     gloss=prediction.sign,
                     confidence=prediction.confidence,
                     is_final=confirmed,
+                    facial_grammar=facial_marker.value,
                 ).model_dump()
             )
             if confirmed:

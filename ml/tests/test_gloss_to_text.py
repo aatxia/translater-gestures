@@ -105,3 +105,24 @@ def test_fingerspelled_object_is_not_declined_into_the_verbs_governed_case():
     # capitalized, not force-declined into a case that doesn't exist for it.
     gloss_sequence = ["I", "WANT", "FS_К", "FS_А", "FS_В", "FS_У", "FS_Н"]
     assert compose_sentence(gloss_sequence) == "Я хочу Кавун."
+
+
+def test_is_question_ends_standalone_sentence_with_a_question_mark():
+    assert compose_sentence(["TAK"], is_question=True) == "Так?"
+
+
+def test_is_question_ends_a_fingerspelled_standalone_word_with_a_question_mark():
+    gloss_sequence = ["FS_О", "FS_К", "FS_С", "FS_А", "FS_Н", "FS_А"]
+    assert compose_sentence(gloss_sequence, is_question=True) == "Оксана?"
+
+
+def test_is_question_ends_pronoun_verb_with_a_question_mark():
+    assert compose_sentence(["I", "HAVE"], is_question=True) == "Я маю?"
+
+
+def test_is_question_ends_svo_sentence_with_a_question_mark():
+    assert compose_sentence(["I", "WANT", "WATER"], is_question=True) == "Я хочу води?"
+
+
+def test_is_question_defaults_to_false():
+    assert compose_sentence(["TAK"]) == "Так."

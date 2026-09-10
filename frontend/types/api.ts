@@ -19,6 +19,11 @@ export interface FrameMessage {
   data: string; // base64-encoded JPEG
 }
 
+/** Non-manual grammar marker (Phase 17): eyebrow position relative to the
+ * signer's own calibrated neutral face. "NONE" also covers "no face
+ * detected" and "still calibrating" -- see ml/features/facial_grammar.py. */
+export type FacialGrammarMarker = "NONE" | "EYEBROWS_RAISED" | "EYEBROWS_FURROWED";
+
 export interface PredictionMessage {
   type: "prediction" | "final_prediction";
   text: string;
@@ -27,6 +32,7 @@ export interface PredictionMessage {
   gloss: string;
   confidence: number;
   is_final: boolean;
+  facial_grammar: FacialGrammarMarker;
 }
 
 export interface ErrorMessage {

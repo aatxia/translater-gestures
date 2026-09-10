@@ -19,6 +19,13 @@ const WS_STATUS_LABEL: Record<WebSocketStatus, string> = {
   error: "Помилка з'єднання",
 };
 
+// Phase 17: non-manual grammar marker label, shown only when detected --
+// "NONE" (no face / not yet calibrated / neutral) has no badge at all.
+const FACIAL_GRAMMAR_LABEL: Partial<Record<string, string>> = {
+  EYEBROWS_RAISED: "🤨 Брови підняті (питання «так/ні»)",
+  EYEBROWS_FURROWED: "🤨 Брови насуплені (питання «хто/що/де»)",
+};
+
 export function TranslatorView(): React.ReactElement {
   const { status, lastMessage, connect, disconnect, sendFrame } = useWebSocket();
   const [inputText, setInputText] = useState("");
@@ -64,6 +71,11 @@ export function TranslatorView(): React.ReactElement {
         ? lastMessage.message
         : "Увімкни камеру, щоб побачити відповідь backend у реальному часі.";
 
+  const facialGrammarLabel =
+    lastMessage?.type === "prediction" || lastMessage?.type === "final_prediction"
+      ? FACIAL_GRAMMAR_LABEL[lastMessage.facial_grammar]
+      : undefined;
+
   return (
     <div className="flex flex-col gap-6">
       <div className="flex items-center justify-between">
@@ -88,8 +100,13 @@ export function TranslatorView(): React.ReactElement {
               WS: {WS_STATUS_LABEL[status]}
             </span>
           </div>
-          <div className="flex flex-1 items-center justify-center rounded-xl bg-slate-100 p-4 text-center text-sm text-slate-500">
-            {translationText}
+          <div className="flex flex-1 flex-col items-center justify-center gap-2 rounded-xl bg-slate-100 p-4 text-center text-sm text-slate-500">
+            <span>{translationText}</span>
+            {facialGrammarLabel && (
+              <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-700">
+                {facialGrammarLabel}
+              </span>
+            )}
           </div>
         </section>
       </div>
