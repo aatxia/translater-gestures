@@ -1,0 +1,29 @@
+# Render Blueprint — backend only (frontend stays on Vercel).
+# https://render.com/docs/blueprint-spec
+#
+# Connect this repo in the Render dashboard ("New +" -> "Blueprint") and it
+# picks this up automatically. After the first deploy, set CORS_ORIGINS
+# below to the frontend's real Vercel URL (the placeholder here will block
+# every browser request with a CORS error until it's corrected).
+services:
+  - type: web
+    name: uksl-translator-backend
+    runtime: docker
+    dockerfilePath: ./docker/backend.Dockerfile
+    dockerContext: .
+    # torch + mediapipe + opencv need more headroom than Render's free tier
+    # (512 MB RAM) reliably gives -- start on "starter" to avoid an OOM kill
+    # on the very first request; downgrade later if it turns out to fit.
+    plan: starter
+    healthCheckPath: /health
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: LOG_LEVEL
+        value: INFO
+      # TODO: replace with the actual deployed frontend URL (Vercel project
+      # domain, not a preview-deployment URL) once known.
+      - key: CORS_ORIGINS
+        value: https://your-frontend-domain.vercel.app
+      - key: MODEL_DEVICE
+        value: cpu
