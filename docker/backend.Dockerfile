@@ -25,4 +25,9 @@ COPY models ./models
 WORKDIR /app/backend
 
 EXPOSE 8000
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Shell form (not exec-array) so $PORT expands -- most PaaS hosts (Render,
+# Railway, ...) inject PORT at runtime and expect the container to bind to
+# it rather than a fixed port; `exec` keeps uvicorn as PID 1 so it still
+# receives SIGTERM directly (a plain shell-form CMD without exec would
+# leave a shell as PID 1 and swallow the signal on container stop/restart).
+CMD ["sh", "-c", "exec uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]

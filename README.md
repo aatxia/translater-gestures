@@ -14,7 +14,8 @@
   Hugging Face Transformers (NLP gloss→text), Video-JEPA (experimental)
 - **Avatar**: Three.js + предзадані анімації, gloss → pose мапінг живе на клієнті
   (`frontend/components/Avatar/poses.ts`), без окремого backend-сервісу
-- **Infra**: Docker / docker-compose (з Phase 2+)
+- **Infra**: Docker / docker-compose (локальна розробка); деплой — Vercel (frontend) +
+  Render (backend, через `docker/backend.Dockerfile`), див. розділ "Деплой" нижче
 
 ## Структура репозиторію
 
@@ -71,6 +72,23 @@ everything runs on a clearly-labeled DEMO/synthetic dataset until one
 exists — see `PROJECT_STATUS.md`). Тренування моделей передбачається на
 Google Colab (GPU), checkpoint переноситься в `models/checkpoints/` і
 використовується локально через `SignRecognizer`.
+
+## Деплой
+
+Frontend і backend деплояться окремо, на різних платформах — backend's CV/ML-залежності
+(torch + mediapipe + opencv, разом кілька гігабайт) і постійне WebSocket-з'єднання для
+стрімінгу камери не влазять у ліміти типового serverless-хостингу (перевірено на практиці:
+Vercel Python Functions обмежують бандл 500 МБ, наш вихід — ~5.8 ГБ).
+
+- **Frontend → Vercel**: звичайний Next.js-проєкт із `Root Directory = frontend`
+  (framework detection — автоматичний, `vercel.json` не потрібен). Env vars
+  (`NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_WS_URL`) вказують на задеплоєний backend.
+- **Backend → Render** (або будь-який Docker-хостинг із підтримкою WebSocket): `render.yaml`
+  у корені репозиторію — Render-blueprint, що будує `docker/backend.Dockerfile` (той самий
+  образ, що й `docker-compose.yml` для локальної розробки — вже коректно копіює `backend/`,
+  `ml/` і `models/` в один контейнер, ставить системні бібліотеки MediaPipe). Перед першим
+  реальним використанням постав `CORS_ORIGINS` (у Render dashboard) на фактичний Vercel-домен
+  фронтенду — плейсхолдер у `render.yaml` навмисно недійсний, щоб не забути це зробити.
 
 ## Roadmap (Phases)
 
