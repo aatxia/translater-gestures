@@ -2,7 +2,7 @@
 
 import { HelpCircle } from "lucide-react";
 import dynamic from "next/dynamic";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Camera } from "@/components/Camera";
 import { SignToSpeech } from "@/components/Illustration";
 import { LandmarkIndicator } from "@/components/LandmarkIndicator";
@@ -45,11 +45,15 @@ export function TranslatorView(): React.ReactElement {
   const { status, lastMessage, landmarksStatus, connect, disconnect, sendFrame } = useWebSocket();
   const [inputText, setInputText] = useState("");
   const [translationState, setTranslationState] = useState<TranslationState>({ status: "idle" });
-  // Avatar (Phase 15) is driven by whichever source most recently produced a
-  // gloss sequence: a Phase 14 text/voice translation, or a live confirmed
-  // sign from the camera (Phase 11's final_prediction, accumulated here).
+  // Avatar (Phase 15) shows exactly the sentence the user just translated
+  // via text/voice above -- nothing else. It used to also accumulate every
+  // camera-confirmed sign forever, but the recognition checkpoint is
+  // trained solely on synthetic demo data (no real УЖМ dataset exists yet,
+  // see PROJECT_STATUS.md) and confirms glosses close to at random on real
+  // camera input; letting that endlessly append here just filled the
+  // avatar with unrelated noise instead of the sentence the user asked to
+  // see translated.
   const [avatarGlossSequence, setAvatarGlossSequence] = useState<string[]>([]);
-  const recognizedGlossesRef = useRef<string[]>([]);
 
   useEffect(() => {
     connect();
@@ -57,13 +61,6 @@ export function TranslatorView(): React.ReactElement {
     // Connect once on mount; connect/disconnect identities are stable (useCallback).
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  useEffect(() => {
-    if (lastMessage?.type === "final_prediction") {
-      recognizedGlossesRef.current = [...recognizedGlossesRef.current, lastMessage.gloss];
-      setAvatarGlossSequence(recognizedGlossesRef.current);
-    }
-  }, [lastMessage]);
 
   const handleTranslate = useCallback(async (text: string) => {
     setTranslationState({ status: "loading" });

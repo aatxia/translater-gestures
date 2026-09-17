@@ -65,7 +65,7 @@ describe("TranslatorView", () => {
     });
   });
 
-  it("feeds a confirmed camera gloss (final_prediction) into the avatar", async () => {
+  it("shows a confirmed camera gloss (final_prediction) in the live translation panel, without touching the avatar", async () => {
     render(<TranslatorView />);
 
     await waitFor(() => expect(lastInstance).not.toBeNull());
@@ -83,14 +83,18 @@ describe("TranslatorView", () => {
       } as MessageEvent<string>);
     });
 
-    // The live translation panel reflects the confirmed message, confirming
-    // it flowed through useWebSocket -> TranslatorView -> both the panel and
-    // the Avatar's glossSequence prop (Avatar itself falls back to an honest
-    // "WebGL не підтримується" message in jsdom, which has no real GL
-    // context -- the gloss-driven pose is covered by
-    // components/Avatar/player.test.ts, not re-tested here). Avatar is
-    // next/dynamic-loaded (ssr: false), so it briefly shows a loading
-    // placeholder before this resolves -- worth its own waitFor.
+    // The live translation panel reflects the confirmed message (flowed
+    // through useWebSocket -> TranslatorView). The avatar is deliberately
+    // NOT driven by this -- see TranslatorView.tsx's avatarGlossSequence
+    // comment: the demo-only recognition checkpoint confirms glosses close
+    // to at random on real camera input, so it must never silently
+    // populate the avatar; only an explicit text/voice translation does
+    // (Avatar itself falls back to an honest "WebGL не підтримується"
+    // message in jsdom, which has no real GL context -- the gloss-driven
+    // pose is covered by components/Avatar/player.test.ts, not re-tested
+    // here). Avatar is next/dynamic-loaded (ssr: false), so it briefly
+    // shows a loading placeholder before this resolves -- worth its own
+    // waitFor.
     await waitFor(() => {
       expect(screen.getByText("[DEMO] Так.")).toBeInTheDocument();
     });

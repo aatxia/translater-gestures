@@ -111,7 +111,20 @@ export function useSpeechRecognition(): UseSpeechRecognitionResult {
     };
 
     recognitionRef.current = recognition;
-    recognition.start();
+    try {
+      recognition.start();
+    } catch (err) {
+      // start() can throw synchronously (e.g. Chrome's InvalidStateError
+      // when called again before the previous session fully ended) --
+      // uncaught, this silently killed the click with no visible error at
+      // all, which read as "voice input just doesn't work."
+      setError({
+        reason: "unknown",
+        message: `Не вдалося запустити розпізнавання мовлення: ${err instanceof Error ? err.message : String(err)}`,
+      });
+      setStatus("error");
+      return;
+    }
     setStatus("listening");
   }, []);
 
