@@ -173,7 +173,7 @@ export function Avatar({ glossSequence }: AvatarProps): React.ReactElement {
               aria-pressed={speed === option}
               className={`rounded-full px-2 py-0.5 font-medium transition-colors ${
                 speed === option
-                  ? "bg-indigo-600 text-white"
+                  ? "bg-brand-600 text-white"
                   : "bg-slate-100 text-slate-500 hover:bg-slate-200"
               }`}
             >
@@ -196,7 +196,7 @@ export function Avatar({ glossSequence }: AvatarProps): React.ReactElement {
                 title={canReplay ? `Повторити жест «${item.label}»` : "Немає анімації для цього жесту"}
                 className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium ${
                   canReplay
-                    ? "border-slate-200 text-slate-600 hover:border-indigo-300 hover:bg-indigo-50 hover:text-indigo-700"
+                    ? "border-slate-200 text-slate-600 hover:border-brand-300 hover:bg-brand-50 hover:text-brand-700"
                     : "cursor-not-allowed border-slate-100 text-slate-300"
                 }`}
               >
