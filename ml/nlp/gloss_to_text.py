@@ -31,11 +31,28 @@ questions are marked non-manually (raised eyebrows for yes/no, furrowed for
 wh-, section 19), never by a separate manual gloss, so there's no "?" gloss
 token for a caller to include. See ml/features/facial_grammar.py, which
 detects this from face landmarks; the caller decides whether it applies.
+
+Subject position accepts a pronoun OR a noun (e.g. ["CAR", "PAST", "RIDE"]
+-> "Машина їхала.") -- not only pronoun-subject sentences. An optional
+TENSE_PAST_GLOSS marker right before the verb switches it to past tense
+(gender/number agreement with the subject, per lexicon.py's module
+docstring); zero or more trailing ADVERBS entries (time words) can follow
+the verb/object. None of this reorders sign order into a different spoken
+order -- these are still exactly the tokens gloss_to_text.py was given,
+composed left to right.
 """
 from __future__ import annotations
 
 from ml.nlp.fingerspelling import despell, is_fingerspell_gloss
-from ml.nlp.lexicon import NEGATION_GLOSS, NOUNS, PRONOUNS, STANDALONE, VERBS
+from ml.nlp.lexicon import (
+    ADVERBS,
+    NEGATION_GLOSS,
+    NOUNS,
+    PRONOUNS,
+    STANDALONE,
+    TENSE_PAST_GLOSS,
+    VERBS,
+)
 
 
 class UnknownGlossError(ValueError):
@@ -54,10 +71,14 @@ def _classify(gloss: str) -> str:
         return "verb"
     if gloss in NOUNS:
         return "noun"
+    if gloss in ADVERBS:
+        return "adverb"
     if gloss in STANDALONE:
         return "standalone"
     if gloss == NEGATION_GLOSS:
         return "negation"
+    if gloss == TENSE_PAST_GLOSS:
+        return "tense_past"
     if is_fingerspell_gloss(gloss):
         return "fingerspell"
     raise UnknownGlossError(f"Unknown gloss {gloss!r} -- not in the Phase 12 lexicon yet.")
@@ -105,45 +126,99 @@ def compose_sentence(gloss_sequence: list[str], *, is_question: bool = False) ->
     if len(units) == 1 and poses[0] == "fingerspell":
         return units[0][1].capitalize() + terminator
 
-    # Pattern: [PRONOUN, (NOT), VERB, (NOUN | fingerspelled word)?] -- SVO
-    # with optional preverbal negation.
-    tokens = list(units)
-    negated = len(tokens) >= 2 and poses[0] == "pronoun" and poses[1] == "negation"
+    # General pattern: [SUBJECT, (NOT)?, (PAST)?, VERB, (OBJECT)?, (ADVERB)*]
+    # where SUBJECT is a pronoun or a noun (nominative-case subject, e.g.
+    # "Машина їхала..." -- "the car was driving...") and OBJECT is a noun
+    # (declined into whatever case the verb governs) or a fingerspelled
+    # word. See lexicon.py's module docstring for why PAST is a separate
+    # marker gloss rather than a distinct verb-form gloss, and for exactly
+    # which subjects can take it (pronoun past tense is only unambiguous
+    # for HE/SHE/WE/YOU_PL/THEY -- I/YOU depend on a gender this app has
+    # no way to know from a gloss sequence alone).
+    if poses[0] not in ("pronoun", "noun"):
+        raise UnsupportedPatternError(
+            f"No composition rule matches gloss sequence {gloss_sequence!r} "
+            "(expected a pronoun or noun in subject position)."
+        )
+
+    subject_pose, subject_gloss = units[0]
+    i = 1
+    negated = i < len(poses) and poses[i] == "negation"
     if negated:
-        tokens.pop(1)
-        poses = [poses[0], *poses[2:]]
+        i += 1
+    past = i < len(poses) and poses[i] == "tense_past"
+    if past:
+        i += 1
 
-    if len(tokens) in (2, 3) and poses[0] == "pronoun" and poses[1] == "verb":
-        pronoun = PRONOUNS[tokens[0][1]]
-        verb = VERBS[tokens[1][1]]
-        if pronoun.person_key not in verb.conjugation:
-            raise UnsupportedPatternError(
-                f"Verb {tokens[1][1]!r} has no known conjugation for person {pronoun.person_key!r}."
-            )
-        predicate = verb.conjugation[pronoun.person_key]
-        if negated:
-            predicate = f"не {predicate}"
+    if i >= len(poses) or poses[i] != "verb":
+        raise UnsupportedPatternError(
+            f"No composition rule matches gloss sequence {gloss_sequence!r} "
+            "(expected a verb after the subject)."
+        )
+    verb_gloss = units[i][1]
+    verb = VERBS[verb_gloss]
+    i += 1
 
-        if len(tokens) == 2:
-            return f"{pronoun.lemma} {predicate}{terminator}"
-
-        if poses[2] == "fingerspell":
-            object_form = tokens[2][1].capitalize()
-        elif poses[2] == "noun":
-            noun = NOUNS[tokens[2][1]]
-            if verb.governs_case not in noun.cases:
+    if subject_pose == "pronoun":
+        pronoun = PRONOUNS[subject_gloss]
+        subject_lemma = pronoun.lemma
+        if past:
+            if pronoun.past_gender is None:
                 raise UnsupportedPatternError(
-                    f"Noun {tokens[2][1]!r} has no {verb.governs_case!r} form needed "
-                    f"by verb {tokens[1][1]!r}."
+                    f"Past tense is ambiguous for {subject_gloss!r} -- it depends on "
+                    "the speaker's/addressee's gender, which a gloss sequence alone "
+                    "doesn't encode."
                 )
-            object_form = noun.cases[verb.governs_case]
+            predicate = verb.past[pronoun.past_gender]
         else:
-            raise UnsupportedPatternError(
-                f"Expected a noun (or fingerspelled word) after the verb, got gloss {tokens[2][1]!r}."
-            )
-        return f"{pronoun.lemma} {predicate} {object_form}{terminator}"
+            if pronoun.person_key not in verb.conjugation:
+                raise UnsupportedPatternError(
+                    f"Verb {verb_gloss!r} has no known conjugation for person {pronoun.person_key!r}."
+                )
+            predicate = verb.conjugation[pronoun.person_key]
+    else:
+        noun_subject = NOUNS[subject_gloss]
+        subject_lemma = noun_subject.cases["nominative"].capitalize()
+        if past:
+            past_key = "plural" if noun_subject.gender == "plural_tantum" else noun_subject.gender
+            predicate = verb.past[past_key]
+        else:
+            if "3sg" not in verb.conjugation:
+                raise UnsupportedPatternError(
+                    f"Verb {verb_gloss!r} has no known 3rd-person conjugation for a noun subject."
+                )
+            predicate = verb.conjugation["3sg"]
 
-    raise UnsupportedPatternError(
-        f"No composition rule matches gloss sequence {gloss_sequence!r} "
-        "(every gloss is individually recognized, but not this combination)."
-    )
+    if negated:
+        predicate = f"не {predicate}"
+
+    object_form: str | None = None
+    if i < len(poses) and poses[i] in ("noun", "fingerspell"):
+        if poses[i] == "fingerspell":
+            object_form = units[i][1].capitalize()
+        else:
+            object_noun = NOUNS[units[i][1]]
+            if verb.governs_case not in object_noun.cases:
+                raise UnsupportedPatternError(
+                    f"Noun {units[i][1]!r} has no {verb.governs_case!r} form needed "
+                    f"by verb {verb_gloss!r}."
+                )
+            object_form = object_noun.cases[verb.governs_case]
+        i += 1
+
+    adverb_forms: list[str] = []
+    while i < len(poses) and poses[i] == "adverb":
+        adverb_forms.append(ADVERBS[units[i][1]].text)
+        i += 1
+
+    if i != len(poses):
+        raise UnsupportedPatternError(
+            f"No composition rule matches gloss sequence {gloss_sequence!r} "
+            "(unexpected gloss(es) after the recognized subject-verb-object-adverbs pattern)."
+        )
+
+    parts = [subject_lemma, predicate]
+    if object_form is not None:
+        parts.append(object_form)
+    parts.extend(adverb_forms)
+    return " ".join(parts) + terminator

@@ -20,6 +20,16 @@ future pattern where sign order and spoken order would genuinely differ.
 A word in the input that isn't in the lexicon is fingerspelled letter-by-
 letter (Phase 16, ml/nlp/fingerspelling.py) rather than dropped or guessed
 -- a real fallback deaf signers use for names/loanwords, not a workaround.
+
+A past-tense verb form (e.g. "їхала") expands into TWO gloss tokens, the
+TENSE_PAST_GLOSS marker followed by the verb's gloss -- not folded into a
+single "past-tense" gloss -- since lexicon.py represents tense as a
+separate marker gloss (see its module docstring). A noun in subject
+position (e.g. "Машина" in "Машина їхала...") isn't special-cased here at
+all: it's just another recognized word, resolved via the same reverse
+index nouns already populate for object position (their "nominative" form
+was always indexed) -- gloss_to_text.py is what decides whether a noun in
+that position forms a valid sentence.
 Only a word containing a character with no dactyl handshape (Latin script,
 digits, ...) raises UnrecognizedWordError.
 """
@@ -29,11 +39,13 @@ import re
 
 from ml.nlp.fingerspelling import UnspellableCharacterError, spell_word
 from ml.nlp.lexicon import (
+    ADVERBS,
     NEGATION_GLOSS,
     NEGATION_PARTICLE,
     NOUNS,
     PRONOUNS,
     STANDALONE,
+    TENSE_PAST_GLOSS,
     VERBS,
 )
 
@@ -51,10 +63,16 @@ def _strip_punctuation(word: str) -> str:
 
 def _build_reverse_index() -> dict[str, str]:
     """Surface Ukrainian word -> gloss token, built once from the shared
-    lexicon: every pronoun, every conjugated verb form, every declined noun
-    form. Multiple grammatical forms of the same word (e.g. "води"/"воду"
-    for WATER) all resolve to the same gloss -- text_to_gloss only needs to
-    recover *which word*, not which case it was inflected for."""
+    lexicon: every pronoun, every PRESENT-tense conjugated verb form,
+    every declined noun form (including "nominative" -- a noun can appear
+    either as an object, already covered here, or as a subject, e.g.
+    "Машина їхала..."; both directions read the same case name), and
+    every invariant time adverb. Multiple grammatical forms of the same
+    word (e.g. "води"/"воду" for WATER) all resolve to the same gloss --
+    text_to_gloss only needs to recover *which word*, not which case it
+    was inflected for. PAST-tense verb forms are handled separately (see
+    `_build_past_verb_index()`) since a single surface word like "їхала"
+    must expand into *two* gloss tokens (PAST + the verb), not one."""
     index: dict[str, str] = {}
     for gloss, entry in PRONOUNS.items():
         index[entry.lemma.lower()] = gloss
@@ -64,10 +82,26 @@ def _build_reverse_index() -> dict[str, str]:
     for gloss, entry in NOUNS.items():
         for surface_form in entry.cases.values():
             index[surface_form] = gloss
+    for gloss, entry in ADVERBS.items():
+        index[entry.text] = gloss
+    return index
+
+
+def _build_past_verb_index() -> dict[str, str]:
+    """Past-tense surface form -> verb gloss (e.g. "їхала" -> "RIDE").
+    Kept separate from `_REVERSE_INDEX` because recognizing one of these
+    words must emit the TENSE_PAST_GLOSS marker before the verb gloss --
+    see lexicon.py's module docstring for why past tense is a marker
+    gloss rather than a distinct verb-form gloss."""
+    index: dict[str, str] = {}
+    for gloss, entry in VERBS.items():
+        for surface_form in entry.past.values():
+            index[surface_form] = gloss
     return index
 
 
 _REVERSE_INDEX = _build_reverse_index()
+_PAST_VERB_INDEX = _build_past_verb_index()
 
 
 def parse_gloss_sequence(text: str) -> list[str]:
@@ -94,6 +128,13 @@ def parse_gloss_sequence(text: str) -> list[str]:
         if word == NEGATION_PARTICLE:
             gloss_sequence.append(NEGATION_GLOSS)
             continue
+
+        past_verb_gloss = _PAST_VERB_INDEX.get(word)
+        if past_verb_gloss is not None:
+            gloss_sequence.append(TENSE_PAST_GLOSS)
+            gloss_sequence.append(past_verb_gloss)
+            continue
+
         gloss = _REVERSE_INDEX.get(word)
         if gloss is not None:
             gloss_sequence.append(gloss)

@@ -8,7 +8,7 @@ rather than spot-checking a handful by hand.
 import pytest
 
 from ml.nlp.gloss_to_text import UnsupportedPatternError, compose_sentence
-from ml.nlp.lexicon import NOUNS, PRONOUNS, VERBS
+from ml.nlp.lexicon import ADVERBS, NOUNS, PRONOUNS, TENSE_PAST_GLOSS, VERBS
 from ml.nlp.text_to_gloss import parse_gloss_sequence
 
 
@@ -41,16 +41,46 @@ def _valid_three_token_sequences() -> list[list[str]]:
     return sequences
 
 
+def _noun_subject_present_sequences() -> list[list[str]]:
+    """Every [NOUN, VERB] pair -- present tense uses the shared 3sg form
+    regardless of the noun's gender, and every verb defines one, so this
+    covers all of NOUNS x VERBS."""
+    return [[noun_gloss, verb_gloss] for noun_gloss in NOUNS for verb_gloss in VERBS]
+
+
+def _pronoun_past_sequences() -> list[list[str]]:
+    """Every [PRONOUN, PAST, VERB] triple for pronouns whose past tense
+    isn't ambiguous (past_gender is not None -- see lexicon.py)."""
+    sequences = []
+    for pronoun_gloss, pronoun in PRONOUNS.items():
+        if pronoun.past_gender is None:
+            continue
+        for verb_gloss in VERBS:
+            sequences.append([pronoun_gloss, TENSE_PAST_GLOSS, verb_gloss])
+    return sequences
+
+
+def _noun_subject_past_sequences() -> list[list[str]]:
+    """Every [NOUN, PAST, VERB] triple -- every noun has a gender and
+    every verb has a full past-tense set, so this covers all of NOUNS x
+    VERBS."""
+    return [[noun_gloss, TENSE_PAST_GLOSS, verb_gloss] for noun_gloss in NOUNS for verb_gloss in VERBS]
+
+
 TWO_TOKEN_SEQUENCES = _valid_two_token_sequences()
 THREE_TOKEN_SEQUENCES = _valid_three_token_sequences()
+NOUN_SUBJECT_PRESENT_SEQUENCES = _noun_subject_present_sequences()
+PRONOUN_PAST_SEQUENCES = _pronoun_past_sequences()
+NOUN_SUBJECT_PAST_SEQUENCES = _noun_subject_past_sequences()
 
 
 def test_lexicon_is_actually_large_enough_for_real_sentences():
     # Guards against silently shrinking back down -- the whole point of
     # this expansion was moving past single-word translation.
     assert len(PRONOUNS) >= 7
-    assert len(VERBS) >= 15
+    assert len(VERBS) >= 16
     assert len(NOUNS) >= 20
+    assert len(ADVERBS) >= 5
     assert len(PRONOUNS) + len(VERBS) + len(NOUNS) >= 45
 
 
@@ -62,6 +92,24 @@ def test_every_valid_pronoun_verb_pair_round_trips(gloss_sequence):
 
 @pytest.mark.parametrize("gloss_sequence", THREE_TOKEN_SEQUENCES, ids=lambda seq: "_".join(seq))
 def test_every_valid_pronoun_verb_noun_triple_round_trips(gloss_sequence):
+    text = compose_sentence(gloss_sequence)
+    assert parse_gloss_sequence(text) == gloss_sequence
+
+
+@pytest.mark.parametrize("gloss_sequence", NOUN_SUBJECT_PRESENT_SEQUENCES, ids=lambda seq: "_".join(seq))
+def test_every_noun_subject_present_tense_pair_round_trips(gloss_sequence):
+    text = compose_sentence(gloss_sequence)
+    assert parse_gloss_sequence(text) == gloss_sequence
+
+
+@pytest.mark.parametrize("gloss_sequence", PRONOUN_PAST_SEQUENCES, ids=lambda seq: "_".join(seq))
+def test_every_unambiguous_pronoun_past_tense_pair_round_trips(gloss_sequence):
+    text = compose_sentence(gloss_sequence)
+    assert parse_gloss_sequence(text) == gloss_sequence
+
+
+@pytest.mark.parametrize("gloss_sequence", NOUN_SUBJECT_PAST_SEQUENCES, ids=lambda seq: "_".join(seq))
+def test_every_noun_subject_past_tense_pair_round_trips(gloss_sequence):
     text = compose_sentence(gloss_sequence)
     assert parse_gloss_sequence(text) == gloss_sequence
 

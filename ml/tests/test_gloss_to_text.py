@@ -71,7 +71,7 @@ def test_verb_missing_a_conjugation_for_the_subject_raises_unsupported_pattern(m
     from ml.nlp import gloss_to_text
     from ml.nlp.lexicon import VerbEntry
 
-    incomplete_verb = VerbEntry(conjugation={"2sg": "хочеш"}, governs_case="accusative")
+    incomplete_verb = VerbEntry(conjugation={"2sg": "хочеш"}, governs_case="accusative", past={})
     monkeypatch.setitem(gloss_to_text.VERBS, "WANT", incomplete_verb)
 
     with pytest.raises(UnsupportedPatternError, match="1sg"):
@@ -82,7 +82,7 @@ def test_verb_governing_a_case_the_noun_lacks_raises_unsupported_pattern(monkeyp
     from ml.nlp import gloss_to_text
     from ml.nlp.lexicon import NounEntry
 
-    incomplete_noun = NounEntry(cases={"accusative": "хліб"})
+    incomplete_noun = NounEntry(cases={"accusative": "хліб"}, gender="masc")
     monkeypatch.setitem(gloss_to_text.NOUNS, "BREAD", incomplete_noun)
 
     with pytest.raises(UnsupportedPatternError, match="genitive_partitive"):
@@ -92,6 +92,62 @@ def test_verb_governing_a_case_the_noun_lacks_raises_unsupported_pattern(monkeyp
 def test_fingerspelled_glosses_compose_into_the_spelled_word_standalone():
     gloss_sequence = ["FS_О", "FS_К", "FS_С", "FS_А", "FS_Н", "FS_А"]
     assert compose_sentence(gloss_sequence) == "Оксана."
+
+
+def test_noun_subject_present_tense_uses_third_person_conjugation():
+    # "The car drives" (present tense doesn't distinguish grammatical
+    # gender in Ukrainian, so any noun subject just takes the 3sg form).
+    assert compose_sentence(["CAR", "RIDE"]) == "Машина їде."
+
+
+def test_noun_subject_with_object():
+    assert compose_sentence(["FRIEND", "HAVE", "PHONE"]) == "Друг має телефон."
+
+
+def test_past_tense_marker_selects_the_correct_gendered_form():
+    assert compose_sentence(["HE", "PAST", "RIDE"]) == "Він їхав."
+    assert compose_sentence(["SHE", "PAST", "RIDE"]) == "Вона їхала."
+    assert compose_sentence(["THEY", "PAST", "RIDE"]) == "Вони їхали."
+    assert compose_sentence(["WE", "PAST", "RIDE"]) == "Ми їхали."
+    assert compose_sentence(["YOU_PL", "PAST", "RIDE"]) == "Ви їхали."
+
+
+def test_past_tense_for_a_noun_subject_uses_the_nouns_own_gender():
+    assert compose_sentence(["CAR", "PAST", "RIDE"]) == "Машина їхала."  # fem
+    assert compose_sentence(["FRIEND", "PAST", "HAVE", "PHONE"]) == "Друг мав телефон."  # masc
+
+
+def test_past_tense_for_a_plurale_tantum_noun_uses_the_plural_form():
+    assert compose_sentence(["MONEY", "PAST", "HAVE"]) == "Гроші мали."
+
+
+def test_past_tense_is_ambiguous_and_refused_for_first_and_second_person_singular():
+    with pytest.raises(UnsupportedPatternError, match="ambiguous"):
+        compose_sentence(["I", "PAST", "WANT"])
+    with pytest.raises(UnsupportedPatternError, match="ambiguous"):
+        compose_sentence(["YOU", "PAST", "WANT"])
+
+
+def test_past_tense_combines_with_negation_in_the_documented_order():
+    assert compose_sentence(["HE", "NOT", "PAST", "RIDE"]) == "Він не їхав."
+
+
+def test_the_users_example_sentence_car_rode_yesterday_evening():
+    assert compose_sentence(["CAR", "PAST", "RIDE", "YESTERDAY", "EVENING"]) == "Машина їхала вчора ввечері."
+
+
+def test_trailing_adverbs_compose_after_the_object():
+    assert compose_sentence(["I", "WANT", "WATER", "TODAY"]) == "Я хочу води сьогодні."
+
+
+def test_gloss_starting_with_neither_pronoun_nor_noun_is_unsupported():
+    with pytest.raises(UnsupportedPatternError):
+        compose_sentence(["WANT", "I"])
+
+
+def test_gloss_with_trailing_junk_after_a_valid_pattern_is_unsupported():
+    with pytest.raises(UnsupportedPatternError):
+        compose_sentence(["I", "WANT", "WATER", "TAK"])
 
 
 def test_fingerspelled_glosses_fill_the_object_slot_of_the_svo_pattern():

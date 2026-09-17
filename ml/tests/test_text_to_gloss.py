@@ -100,6 +100,29 @@ def test_fingerspelled_object_in_a_sentence_round_trips():
     ]
 
 
+def test_noun_subject_present_tense_parses_correctly():
+    assert parse_gloss_sequence("Машина їде.") == ["CAR", "RIDE"]
+
+
+def test_past_tense_verb_form_expands_to_the_past_marker_plus_the_verb():
+    assert parse_gloss_sequence("Він їхав.") == ["HE", "PAST", "RIDE"]
+    assert parse_gloss_sequence("Машина їхала.") == ["CAR", "PAST", "RIDE"]
+
+
+def test_past_tense_combined_with_negation_parses_in_word_order():
+    assert parse_gloss_sequence("Він не їхав.") == ["HE", "NOT", "PAST", "RIDE"]
+
+
+def test_trailing_time_adverbs_parse_after_the_object():
+    assert parse_gloss_sequence("Машина їхала вчора ввечері.") == [
+        "CAR",
+        "PAST",
+        "RIDE",
+        "YESTERDAY",
+        "EVENING",
+    ]
+
+
 def test_empty_text_rejected():
     with pytest.raises(ValueError, match="must not be empty"):
         parse_gloss_sequence("")
@@ -125,6 +148,16 @@ def test_empty_text_rejected():
         "Я маю.",
         "Оксана.",
         "Я люблю Оксану.",
+        "Машина їде.",
+        "Він їхав.",
+        "Вона їхала.",
+        "Вони їхали.",
+        "Машина їхала.",
+        "Друг мав телефон.",
+        "Гроші мали.",
+        "Він не їхав.",
+        "Машина їхала вчора ввечері.",
+        "Я хочу води сьогодні.",
     ],
 )
 def test_round_trips_through_compose_sentence(text):
