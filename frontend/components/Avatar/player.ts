@@ -5,7 +5,7 @@
  * which glosses in the sequence have no defined pose at all (rather than
  * silently freezing or guessing one).
  */
-import { type JointRotations, NEUTRAL_POSE, poseForGloss } from "./poses";
+import { type JointRotations, type Pose, NEUTRAL_POSE, poseForGloss } from "./poses";
 
 export const TRANSITION_SECONDS = 0.35;
 export const HOLD_SECONDS = 1.1;
@@ -41,23 +41,37 @@ export class GlossPlayer {
   private sequence: string[] = [];
   private index = 0;
   private elapsed = 0;
-  private fromPose: JointRotations = NEUTRAL_POSE;
+  private fromPose: JointRotations;
+
+  /**
+   * Both defaults reproduce the original (procedural-puppet-only) behavior
+   * exactly. A second puppet backend (e.g. a rigged model whose own "arms
+   * relaxed" pose isn't all-zero, and whose gesture poses live in a
+   * separate table) can supply its own neutral pose and lookup function
+   * instead, reusing this class's timing/transition/wobble logic as-is.
+   */
+  constructor(
+    private neutralPose: JointRotations = NEUTRAL_POSE,
+    private poseLookup: (gloss: string) => Pose | null = poseForGloss,
+  ) {
+    this.fromPose = neutralPose;
+  }
 
   play(sequence: string[]): void {
     this.sequence = sequence;
     this.index = 0;
     this.elapsed = 0;
-    this.fromPose = NEUTRAL_POSE;
+    this.fromPose = this.neutralPose;
   }
 
   get unanimatedGlosses(): string[] {
-    return this.sequence.filter((gloss) => poseForGloss(gloss) === null);
+    return this.sequence.filter((gloss) => this.poseLookup(gloss) === null);
   }
 
   update(deltaSeconds: number): PlayerFrame {
     if (this.index >= this.sequence.length) {
       return {
-        rotations: NEUTRAL_POSE,
+        rotations: this.neutralPose,
         currentGloss: null,
         unanimatedGlosses: this.unanimatedGlosses,
         finished: true,
@@ -66,8 +80,8 @@ export class GlossPlayer {
 
     this.elapsed += deltaSeconds;
     const gloss = this.sequence[this.index]!;
-    const pose = poseForGloss(gloss);
-    const target = pose?.target ?? NEUTRAL_POSE;
+    const pose = this.poseLookup(gloss);
+    const target = pose?.target ?? this.neutralPose;
 
     let rotations: JointRotations;
     if (this.elapsed < TRANSITION_SECONDS) {
