@@ -96,6 +96,27 @@ describe("useSpeechRecognition", () => {
     expect(result.current.error?.reason).toBe("permission_denied");
   });
 
+  it("surfaces a clear error instead of crashing silently when start() throws synchronously", () => {
+    // Chrome throws InvalidStateError synchronously from start() if it's
+    // called again before the previous session fully ended -- uncaught,
+    // this killed the click handler with no visible feedback at all.
+    class ThrowingSpeechRecognition extends MockSpeechRecognition {
+      override start = vi.fn(() => {
+        throw new DOMException("already started", "InvalidStateError");
+      });
+    }
+    vi.stubGlobal("SpeechRecognition", ThrowingSpeechRecognition);
+
+    const { result } = renderHook(() => useSpeechRecognition());
+
+    act(() => {
+      result.current.start();
+    });
+
+    expect(result.current.status).toBe("error");
+    expect(result.current.error?.message).toContain("already started");
+  });
+
   it("sets status to stopped when stop() is called", async () => {
     vi.stubGlobal("SpeechRecognition", TrackedMockSpeechRecognition);
 
