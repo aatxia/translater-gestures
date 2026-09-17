@@ -1,8 +1,8 @@
 "use client";
 
 import { HelpCircle } from "lucide-react";
+import dynamic from "next/dynamic";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Avatar } from "@/components/Avatar";
 import { Camera } from "@/components/Camera";
 import { LandmarkIndicator } from "@/components/LandmarkIndicator";
 import { TextInput } from "@/components/TextInput";
@@ -11,6 +11,19 @@ import { VoiceInput } from "@/components/VoiceInput";
 import { useWebSocket, type WebSocketStatus } from "@/hooks/useWebSocket";
 import { ApiError, textToGloss } from "@/lib/api";
 import type { TranslationState } from "@/types/translation";
+
+// Three.js alone is ~540 KB -- the single largest dependency in this app.
+// Deferred until the browser is idle after first paint instead of blocking
+// the rest of the page (camera, WS connection, text input) on it; ssr:
+// false because it touches canvas/WebGL, which don't exist on the server.
+const Avatar = dynamic(() => import("@/components/Avatar").then((mod) => mod.Avatar), {
+  ssr: false,
+  loading: () => (
+    <div className="flex h-56 items-center justify-center rounded-xl bg-slate-100 text-sm text-slate-400">
+      Завантаження 3D-аватара...
+    </div>
+  ),
+});
 
 const WS_STATUS_LABEL: Record<WebSocketStatus, string> = {
   idle: "Не з'єднано",

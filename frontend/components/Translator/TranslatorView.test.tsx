@@ -88,11 +88,15 @@ describe("TranslatorView", () => {
     // the Avatar's glossSequence prop (Avatar itself falls back to an honest
     // "WebGL не підтримується" message in jsdom, which has no real GL
     // context -- the gloss-driven pose is covered by
-    // components/Avatar/player.test.ts, not re-tested here).
+    // components/Avatar/player.test.ts, not re-tested here). Avatar is
+    // next/dynamic-loaded (ssr: false), so it briefly shows a loading
+    // placeholder before this resolves -- worth its own waitFor.
     await waitFor(() => {
       expect(screen.getByText("[DEMO] Так.")).toBeInTheDocument();
     });
-    expect(screen.getByText(/WebGL не підтримується/)).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByText(/WebGL не підтримується/)).toBeInTheDocument();
+    });
     expect(screen.queryByText(/Брови/)).not.toBeInTheDocument();
   });
 
