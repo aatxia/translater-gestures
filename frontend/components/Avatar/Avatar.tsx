@@ -1,10 +1,12 @@
 "use client";
 
-import { Info } from "lucide-react";
+import { Info, RotateCcw } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
-import { groupGlossesForDisplay } from "@/lib/glossDisplay";
+import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+import { formatGlossLabel, groupGlossesForDisplay } from "@/lib/glossDisplay";
 import { GlossPlayer } from "./player";
+import { poseForGloss } from "./poses";
 import { applyRotations, buildPuppet } from "./puppet";
 
 interface AvatarProps {
@@ -18,6 +20,8 @@ interface PlaybackStatus {
 }
 
 const IDLE_STATUS: PlaybackStatus = { currentGloss: null, unanimatedGlosses: [] };
+
+const SPEED_OPTIONS = [0.5, 1, 1.5, 2] as const;
 
 /** Detected once via a throwaway canvas, not the real one -- no effect-time
  * setState needed to gate the fallback UI (jsdom, and real browsers without
@@ -40,8 +44,14 @@ function detectWebglSupport(): boolean {
 export function Avatar({ glossSequence }: AvatarProps): React.ReactElement {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const playerRef = useRef<GlossPlayer>(new GlossPlayer());
+  const speedRef = useRef(1);
   const [webglUnsupported] = useState(() => !detectWebglSupport());
   const [status, setStatus] = useState<PlaybackStatus>(IDLE_STATUS);
+  const [speed, setSpeed] = useState(1);
+
+  useEffect(() => {
+    speedRef.current = speed;
+  }, [speed]);
 
   useEffect(() => {
     playerRef.current.play(glossSequence);
@@ -74,13 +84,32 @@ export function Avatar({ glossSequence }: AvatarProps): React.ReactElement {
     camera.position.set(0, 1, 3.2);
     camera.lookAt(0, 0.7, 0);
 
-    scene.add(new THREE.AmbientLight(0xffffff, 0.6));
-    const keyLight = new THREE.DirectionalLight(0xffffff, 0.8);
+    // Three-point lighting for contrast: a bright key light casting real
+    // shadow-side definition, a dim cool fill so the shadow side isn't pure
+    // black, and a rim light behind the puppet to separate it from the dark
+    // viewport background.
+    scene.add(new THREE.AmbientLight(0xffffff, 0.25));
+    const keyLight = new THREE.DirectionalLight(0xffffff, 1.4);
     keyLight.position.set(2, 3, 2);
     scene.add(keyLight);
+    const fillLight = new THREE.DirectionalLight(0x8ab4ff, 0.35);
+    fillLight.position.set(-2.5, 1, 1.5);
+    scene.add(fillLight);
+    const rimLight = new THREE.DirectionalLight(0xffffff, 0.6);
+    rimLight.position.set(0, 2, -3);
+    scene.add(rimLight);
 
     const puppet = buildPuppet();
     scene.add(puppet.root);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.target.set(0, 0.7, 0);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.08;
+    controls.enablePan = false;
+    controls.minDistance = 1.8;
+    controls.maxDistance = 5;
+    controls.update();
 
     let frameId: number;
     let lastTime = performance.now();
@@ -89,10 +118,11 @@ export function Avatar({ glossSequence }: AvatarProps): React.ReactElement {
       const delta = Math.min((now - lastTime) / 1000, 0.1);
       lastTime = now;
 
-      const frame = playerRef.current.update(delta);
+      const frame = playerRef.current.update(delta * speedRef.current);
       applyRotations(puppet, frame.rotations);
       setStatus({ currentGloss: frame.currentGloss, unanimatedGlosses: frame.unanimatedGlosses });
 
+      controls.update();
       renderer.render(scene, camera);
       frameId = requestAnimationFrame(tick);
     }
@@ -100,6 +130,7 @@ export function Avatar({ glossSequence }: AvatarProps): React.ReactElement {
 
     return () => {
       cancelAnimationFrame(frameId);
+      controls.dispose();
       renderer.dispose();
     };
   }, [webglUnsupported]);
@@ -112,6 +143,8 @@ export function Avatar({ glossSequence }: AvatarProps): React.ReactElement {
     );
   }
 
+  const displayItems = groupGlossesForDisplay(glossSequence);
+
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-center justify-between text-xs">
@@ -119,9 +152,62 @@ export function Avatar({ glossSequence }: AvatarProps): React.ReactElement {
           <Info className="h-3 w-3" aria-hidden />
           Демо-жести, не справжня УЖМ
         </span>
-        {status.currentGloss && <span className="text-slate-500">{status.currentGloss}</span>}
+        {status.currentGloss && (
+          <span className="text-slate-500">{formatGlossLabel(status.currentGloss)}</span>
+        )}
       </div>
-      <canvas ref={canvasRef} className="h-56 w-full rounded-xl bg-slate-100" />
+
+      <canvas ref={canvasRef} className="h-56 w-full rounded-xl bg-slate-800" />
+      <p className="text-center text-[11px] text-slate-400">
+        Перетягніть, щоб обертати модель — прокрутіть, щоб наблизити
+      </p>
+
+      <div className="flex items-center gap-2 text-xs">
+        <span className="font-medium text-slate-500">Швидкість:</span>
+        <div className="flex gap-1">
+          {SPEED_OPTIONS.map((option) => (
+            <button
+              key={option}
+              type="button"
+              onClick={() => setSpeed(option)}
+              aria-pressed={speed === option}
+              className={`rounded-full px-2 py-0.5 font-medium transition-colors ${
+                speed === option
+                  ? "bg-indigo-600 text-white"
+                  : "bg-slate-100 text-slate-500 hover:bg-slate-200"
+              }`}
+            >
+              {option}×
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {displayItems.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {displayItems.map((item) => {
+            const canReplay = item.tokens.some((token) => poseForGloss(token) !== null);
+            return (
+              <button
+                key={item.key}
+                type="button"
+                disabled={!canReplay}
+                onClick={() => playerRef.current.play(item.tokens)}
+                title={canReplay ? `Повторити жест «${item.label}»` : "Немає анімації для цього жесту"}
+                className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium ${
+                  canReplay
+                    ? "border-slate-200 text-slate-600 hover:border-indigo-300 hover:bg-indigo-50 hover:text-indigo-700"
+                    : "cursor-not-allowed border-slate-100 text-slate-300"
+                }`}
+              >
+                {canReplay && <RotateCcw className="h-3 w-3" aria-hidden />}
+                {item.label}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
       {status.unanimatedGlosses.length > 0 && (
         <p className="text-xs text-slate-400">
           Немає анімації для:{" "}
