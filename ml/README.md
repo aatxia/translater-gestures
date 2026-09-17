@@ -234,11 +234,24 @@ subject person, declines nouns into whichever case the verb governs, and
 inserts negation in the correct preverbal position — **not**
 `' '.join(gloss_sequence)`. `parse_gloss_sequence()` is its reverse: it
 maps recognized Ukrainian surface forms (any conjugated/declined form) back
-to their gloss token, in the order they appeared. Coverage is intentionally
-small: no public annotated УЖМ dataset exists yet (Phase 8), so there's no
-real gloss vocabulary to build a broader lexicon from. Every gloss/word and
+to their gloss token, in the order they appeared. Every gloss/word and
 pattern either direction accepts is listed explicitly in its module;
 anything else raises a clear `ValueError` subclass rather than guessing.
+
+**Vocabulary** (`lexicon.py`) is hand-authored and grammar-checked, not
+scraped or guessed: no public annotated УЖМ dataset exists yet (Phase 8),
+so there's no real gloss vocabulary to build a broader lexicon from. It
+currently covers 7 pronouns (1st/2nd/3rd person, singular and plural), 15
+verbs, and 24 nouns — ~2,400 distinct grammatically-valid pronoun/verb/noun
+sentences (not just single-word output), all round-trip tested
+(`ml/tests/test_lexicon_expansion.py`). Case coverage is a deliberate
+grammar decision, not an oversight: mass/substance nouns (water, tea,
+coffee, ...) get both `genitive_partitive` ("хочу води" — some water) and
+`accusative` ("п'ю воду" — the water) forms, since both are genuinely
+idiomatic; count nouns (book, phone, house, ...) only get `accusative`,
+so pairing one with a genitive_partitive-governing verb (e.g. `WANT` +
+`MONEY`) correctly raises `UnsupportedPatternError` rather than composing
+a dubious sentence.
 
 ```python
 from ml.nlp.gloss_to_text import compose_sentence
