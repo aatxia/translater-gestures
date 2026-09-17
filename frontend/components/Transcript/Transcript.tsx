@@ -1,5 +1,6 @@
 "use client";
 
+import { CaseSensitive } from "lucide-react";
 import { groupGlossesForDisplay } from "@/lib/glossDisplay";
 import type { TranslationState } from "@/types/translation";
 
@@ -32,18 +33,20 @@ export function Transcript({ state }: TranscriptProps): React.ReactElement {
         {items.map((item) => (
           <span
             key={item.key}
-            className={`rounded-md px-2 py-1 font-mono text-sm ${
-              item.isFingerspell ? "bg-amber-50 text-amber-700" : "bg-brand-50 text-brand-700"
+            className={`inline-flex items-center gap-1 rounded-md px-2 py-1 font-mono text-sm ${
+              item.isFingerspell
+                ? "border border-slate-200 bg-slate-50 text-slate-700"
+                : "bg-brand-50 text-brand-700"
             }`}
           >
+            {item.isFingerspell && <CaseSensitive className="h-3.5 w-3.5" aria-hidden />}
             {item.label}
           </span>
         ))}
       </div>
       <p className="text-xs text-slate-400">
-        Послідовність gloss для 3D-аватара (Phase 15) нижче. 🔤 позначає дактилологію (Phase
-        16, слово поза лексиконом, розкладене по літерах) — аватар не показує окремі літери
-        (немає моделі пальців), лише тримає нейтральну позу для таких жестів.
+        Послідовність gloss для 3D-аватара нижче. Позначені літерами чипи — дактилологія (слово
+        поза лексиконом, розкладене по літерах).
       </p>
     </div>
   );

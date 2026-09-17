@@ -1,9 +1,10 @@
 "use client";
 
+import { HelpCircle } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Avatar } from "@/components/Avatar";
 import { Camera } from "@/components/Camera";
-import { ConnectionStatus } from "@/components/ConnectionStatus";
+import { LandmarkIndicator } from "@/components/LandmarkIndicator";
 import { TextInput } from "@/components/TextInput";
 import { Transcript } from "@/components/Transcript";
 import { VoiceInput } from "@/components/VoiceInput";
@@ -22,12 +23,12 @@ const WS_STATUS_LABEL: Record<WebSocketStatus, string> = {
 // Phase 17: non-manual grammar marker label, shown only when detected --
 // "NONE" (no face / not yet calibrated / neutral) has no badge at all.
 const FACIAL_GRAMMAR_LABEL: Partial<Record<string, string>> = {
-  EYEBROWS_RAISED: "🤨 Брови підняті (питання «так/ні»)",
-  EYEBROWS_FURROWED: "🤨 Брови насуплені (питання «хто/що/де»)",
+  EYEBROWS_RAISED: "Брови підняті (питання «так/ні»)",
+  EYEBROWS_FURROWED: "Брови насуплені (питання «хто/що/де»)",
 };
 
 export function TranslatorView(): React.ReactElement {
-  const { status, lastMessage, connect, disconnect, sendFrame } = useWebSocket();
+  const { status, lastMessage, landmarksStatus, connect, disconnect, sendFrame } = useWebSocket();
   const [inputText, setInputText] = useState("");
   const [translationState, setTranslationState] = useState<TranslationState>({ status: "idle" });
   // Avatar (Phase 15) is driven by whichever source most recently produced a
@@ -78,17 +79,15 @@ export function TranslatorView(): React.ReactElement {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-slate-900">Перекладач УЖМ</h1>
-        <ConnectionStatus />
-      </div>
-
       <div className="grid gap-6 md:grid-cols-2">
         <section className="flex flex-col rounded-2xl border border-slate-200 bg-white p-6">
           <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">
             Камера
           </h2>
           <Camera onFrame={sendFrame} />
+          <div className="mt-3">
+            <LandmarkIndicator status={landmarksStatus} />
+          </div>
         </section>
 
         <section className="flex flex-col rounded-2xl border border-slate-200 bg-white p-6">
@@ -103,7 +102,8 @@ export function TranslatorView(): React.ReactElement {
           <div className="flex flex-1 flex-col items-center justify-center gap-2 rounded-xl bg-slate-100 p-4 text-center text-sm text-slate-500">
             <span>{translationText}</span>
             {facialGrammarLabel && (
-              <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-700">
+              <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700">
+                <HelpCircle className="h-3 w-3" aria-hidden />
                 {facialGrammarLabel}
               </span>
             )}
@@ -129,7 +129,7 @@ export function TranslatorView(): React.ReactElement {
 
       <section className="rounded-2xl border border-slate-200 bg-white p-6">
         <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">
-          3D Avatar
+          3D-аватар
         </h2>
         <Avatar glossSequence={avatarGlossSequence} />
       </section>

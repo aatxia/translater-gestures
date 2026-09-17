@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import "./globals.css";
+import { ConnectionStatus } from "@/components/ConnectionStatus";
 
 export const metadata: Metadata = {
   title: "UKSL Translator",
@@ -14,20 +14,13 @@ export default function RootLayout({
 }): React.ReactElement {
   return (
     <html lang="uk">
-      <body className="min-h-screen">
+      <body className="min-h-screen bg-slate-50">
         <header className="border-b border-slate-200 bg-white">
           <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
-            <Link href="/" className="text-lg font-semibold text-brand-700">
+            <span className="text-lg font-semibold tracking-tight text-slate-900">
               UKSL Translator
-            </Link>
-            <nav className="flex gap-6 text-sm font-medium text-slate-600">
-              <Link href="/" className="hover:text-brand-600">
-                Головна
-              </Link>
-              <Link href="/translator" className="hover:text-brand-600">
-                Перекладач
-              </Link>
-            </nav>
+            </span>
+            <ConnectionStatus />
           </div>
         </header>
         <main className="mx-auto max-w-6xl px-6 py-8">{children}</main>

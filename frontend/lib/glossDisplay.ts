@@ -35,7 +35,7 @@ export function groupGlossesForDisplay(sequence: string[]): GlossDisplayItem[] {
     }
     items.push({
       key: `fs-${start}`,
-      label: `🔤 ${word.charAt(0)}${word.slice(1).toLowerCase()}`,
+      label: `${word.charAt(0)}${word.slice(1).toLowerCase()}`,
       isFingerspell: true,
     });
   }

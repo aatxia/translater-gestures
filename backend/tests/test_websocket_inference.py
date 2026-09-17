@@ -11,13 +11,13 @@ import base64
 
 import cv2
 import numpy as np
-import websocket.handler as ws_handler
-from app.main import app
 from fastapi.testclient import TestClient
-
 from ml.datasets.synthetic import generate_demo_dataset
 from ml.preprocessing.landmarks import FrameLandmarks
 from ml.training.train import main as train_main
+
+import websocket.handler as ws_handler
+from app.main import app
 
 client = TestClient(app)
 
@@ -67,6 +67,42 @@ class _StubLandmarkExtractor:
         return FrameLandmarks()
 
 
+class _RightHandOnlyExtractor:
+    """A stub reporting a detected right hand and pose, nothing else --
+    exercises landmarks_status reporting non-uniform presence, not just
+    all-True/all-False."""
+
+    def extract(self, frame_bgr):
+        return FrameLandmarks(
+            right_hand=np.zeros((21, 3), dtype=np.float32),
+            pose=np.zeros((33, 3), dtype=np.float32),
+        )
+
+
+def test_landmarks_status_reflects_actual_per_modality_detection(monkeypatch, reset_inference_caches):
+    """Wiring test for the hand/pose-visibility indicator: landmarks_status
+    must match ml/preprocessing/normalization.py's `present` dict exactly,
+    including when only some modalities are detected -- not collapsed to a
+    single boolean, and sent before the checkpoint is even loaded (it's
+    independent of ML readiness, see websocket/handler.py)."""
+    monkeypatch.setenv("WS_MAX_FPS", "100000")
+    monkeypatch.setattr(ws_handler, "_get_landmark_extractor", lambda: _RightHandOnlyExtractor())
+
+    frame_data = _blank_frame_data_url()
+    with client.websocket_connect("/ws") as ws:
+        ws.receive_json()  # connection ack
+        ws.send_json({"type": "frame", "timestamp": 1, "data": frame_data})
+        status = ws.receive_json()
+
+    assert status == {
+        "type": "landmarks_status",
+        "left_hand": False,
+        "right_hand": True,
+        "pose": True,
+        "face": False,
+    }
+
+
 def test_sends_buffering_status_then_a_real_prediction_once_window_fills(
     tmp_path, monkeypatch, reset_inference_caches
 ):
@@ -82,11 +118,13 @@ def test_sends_buffering_status_then_a_real_prediction_once_window_fills(
 
         for i in range(SEQUENCE_LENGTH - 1):
             ws.send_json({"type": "frame", "timestamp": i, "data": frame_data})
+            ws.receive_json()  # landmarks_status
             response = ws.receive_json()
             assert response["type"] == "error"
             assert f"Buffering: {i + 1}/{SEQUENCE_LENGTH}" in response["message"]
 
         ws.send_json({"type": "frame", "timestamp": SEQUENCE_LENGTH, "data": frame_data})
+        ws.receive_json()  # landmarks_status
         response = ws.receive_json()
 
         assert response["type"] == "prediction"
@@ -109,6 +147,7 @@ def test_keeps_predicting_on_the_sliding_window_after_the_first_prediction(
         ws.receive_json()
         for i in range(SEQUENCE_LENGTH + 2):
             ws.send_json({"type": "frame", "timestamp": i, "data": frame_data})
+            ws.receive_json()  # landmarks_status
             response = ws.receive_json()
             if i >= SEQUENCE_LENGTH - 1:
                 assert response["type"] == "prediction"
@@ -136,6 +175,7 @@ def test_confirms_a_final_prediction_once_the_gloss_stabilizes(tmp_path, monkeyp
         ws.receive_json()
         for i in range(SEQUENCE_LENGTH + 5):
             ws.send_json({"type": "frame", "timestamp": i, "data": frame_data})
+            ws.receive_json()  # landmarks_status
             response = ws.receive_json()
             if response["type"] == "final_prediction":
                 final_predictions.append(response)

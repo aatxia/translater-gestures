@@ -1,5 +1,6 @@
 "use client";
 
+import { Info } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { groupGlossesForDisplay } from "@/lib/glossDisplay";
@@ -114,8 +115,9 @@ export function Avatar({ glossSequence }: AvatarProps): React.ReactElement {
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-center justify-between text-xs">
-        <span className="rounded-full bg-amber-100 px-2 py-0.5 font-semibold text-amber-700">
-          ⚠ DEMO — умовні жести, не справжня УЖМ
+        <span className="inline-flex items-center gap-1 rounded-full border border-slate-200 px-2 py-0.5 font-medium text-slate-500">
+          <Info className="h-3 w-3" aria-hidden />
+          Демо-жести, не справжня УЖМ
         </span>
         {status.currentGloss && <span className="text-slate-500">{status.currentGloss}</span>}
       </div>

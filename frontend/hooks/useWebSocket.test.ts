@@ -85,6 +85,41 @@ describe("useWebSocket", () => {
     });
   });
 
+  it("keeps landmarksStatus after a later, different message arrives", async () => {
+    const { result } = renderHook(() => useWebSocket());
+
+    act(() => result.current.connect());
+    act(() => instances[0]?.simulateOpen());
+
+    act(() => {
+      instances[0]?.simulateMessage({
+        type: "landmarks_status",
+        left_hand: true,
+        right_hand: false,
+        pose: true,
+        face: false,
+      });
+    });
+    await waitFor(() => {
+      expect(result.current.landmarksStatus?.left_hand).toBe(true);
+    });
+
+    // The very next message (real protocol: a prediction/error always
+    // follows landmarks_status for the same frame) overwrites lastMessage
+    // but must NOT erase the sticky landmarksStatus.
+    act(() => {
+      instances[0]?.simulateMessage({
+        type: "error",
+        message: "Buffering: 1/32 frames collected before the first prediction.",
+      });
+    });
+    await waitFor(() => {
+      expect(result.current.lastMessage?.type).toBe("error");
+    });
+    expect(result.current.landmarksStatus?.left_hand).toBe(true);
+    expect(result.current.landmarksStatus?.right_hand).toBe(false);
+  });
+
   it("ignores malformed (non-JSON) server messages without crashing", async () => {
     const { result } = renderHook(() => useWebSocket());
 

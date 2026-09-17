@@ -65,6 +65,7 @@ from websocket.manager import connection_manager
 from websocket.protocol import (
     ConnectionMessage,
     ErrorMessage,
+    LandmarksStatusMessage,
     PredictionMessage,
     ProtocolError,
     parse_client_message,
@@ -202,6 +203,18 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
             # slow frame doesn't stall every other connection.
             raw_landmarks = await asyncio.to_thread(extractor.extract, decoded_frame)
             normalized = normalize_frame(raw_landmarks)
+
+            # Sent independent of everything below (ML readiness, buffering,
+            # facial calibration) -- real per-frame detection, so the "is my
+            # hand visible" indicator works from frame 1.
+            await websocket.send_json(
+                LandmarksStatusMessage(
+                    left_hand=normalized.present["left_hand"],
+                    right_hand=normalized.present["right_hand"],
+                    pose=normalized.present["pose"],
+                    face=normalized.present["face"],
+                ).model_dump()
+            )
 
             # Calibrates/classifies regardless of ML readiness below -- an
             # honest FacialGrammarMarker.NONE when no face was detected at

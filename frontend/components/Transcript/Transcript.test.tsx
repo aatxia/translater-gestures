@@ -38,7 +38,7 @@ describe("Transcript", () => {
 
     expect(screen.getByText("I")).toBeInTheDocument();
     expect(screen.getByText("WANT")).toBeInTheDocument();
-    expect(screen.getByText("🔤 Кавун")).toBeInTheDocument();
+    expect(screen.getByText("Кавун")).toBeInTheDocument();
     expect(screen.queryByText("FS_К")).not.toBeInTheDocument();
   });
 });
