@@ -123,14 +123,22 @@ describe("TranslatorView", () => {
     });
   });
 
-  it("translates typed text into a gloss sequence via the Phase 14 API", async () => {
+  it("translates typed text into a real Ukrainian sentence via the Phase 14 API, never the internal gloss codes", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async (url: string) => {
         if (url.toString().endsWith("/translate/text-to-gloss")) {
           return {
             ok: true,
-            json: async () => ({ gloss_sequence: ["I", "WANT", "WATER"] }),
+            json: async () => ({
+              gloss_sequence: ["I", "WANT", "WATER"],
+              gloss_labels: [
+                { text: "Я", is_fingerspell: false },
+                { text: "хотіти", is_fingerspell: false },
+                { text: "вода", is_fingerspell: false },
+              ],
+              composed_text: "Я хочу води.",
+            }),
           };
         }
         throw new Error("no backend in this test");
@@ -144,9 +152,11 @@ describe("TranslatorView", () => {
     await user.click(screen.getByRole("button", { name: "Перекласти" }));
 
     await waitFor(() => {
-      expect(screen.getByText("WATER")).toBeInTheDocument();
+      expect(screen.getByText("Я хочу води.")).toBeInTheDocument();
     });
-    expect(screen.getByText("I")).toBeInTheDocument();
-    expect(screen.getByText("WANT")).toBeInTheDocument();
+    expect(screen.getByText("хотіти")).toBeInTheDocument();
+    expect(screen.getByText("вода")).toBeInTheDocument();
+    expect(screen.queryByText("WANT")).not.toBeInTheDocument();
+    expect(screen.queryByText("WATER")).not.toBeInTheDocument();
   });
 });

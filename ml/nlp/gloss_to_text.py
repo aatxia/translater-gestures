@@ -106,6 +106,43 @@ def _group_units(gloss_sequence: list[str]) -> list[tuple[str, str]]:
     return units
 
 
+def gloss_display_labels(gloss_sequence: list[str]) -> list[tuple[str, bool]]:
+    """gloss_sequence -> a list of (Ukrainian word/phrase, is_fingerspell)
+    pairs, for showing a gloss sequence to a person without leaking the
+    internal English gloss identifiers (e.g. "WANT", "CAR") into the UI --
+    those are code, not Ukrainian, and were never meant to be read by an
+    end user. A pronoun becomes its lemma, a verb its infinitive
+    (dictionary citation form, not any one conjugated form), a noun its
+    nominative form, an adverb/standalone its own text, negation "не", and
+    a fingerspelled run the word it spells (is_fingerspell=True, so a
+    caller can still show its own "spelled, not from the dictionary"
+    indicator -- the same distinction lib/glossDisplay.ts's
+    groupGlossesForDisplay() already draws on the frontend). TENSE_PAST_GLOSS
+    has no Ukrainian surface form of its own (see lexicon.py's module
+    docstring -- it's a marker, not a word), so it contributes no label at
+    all rather than an invented placeholder. Raises UnknownGlossError
+    first, same as compose_sentence."""
+    labels: list[tuple[str, bool]] = []
+    for pose, value in _group_units(gloss_sequence):
+        if pose == "pronoun":
+            labels.append((PRONOUNS[value].lemma, False))
+        elif pose == "verb":
+            labels.append((VERBS[value].infinitive, False))
+        elif pose == "noun":
+            labels.append((NOUNS[value].cases["nominative"], False))
+        elif pose == "adverb":
+            labels.append((ADVERBS[value].text, False))
+        elif pose == "standalone":
+            labels.append((STANDALONE[value].text, False))
+        elif pose == "negation":
+            labels.append(("не", False))
+        elif pose == "fingerspell":
+            labels.append((value.capitalize(), True))
+        elif pose == "tense_past":
+            continue
+    return labels
+
+
 def compose_sentence(gloss_sequence: list[str], *, is_question: bool = False) -> str:
     """УЖМ gloss sequence -> natural Ukrainian sentence. See module
     docstring for exactly which glosses/patterns are supported; anything

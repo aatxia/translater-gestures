@@ -18,12 +18,28 @@ describe("Transcript", () => {
     expect(screen.getByText("Unrecognized word 'кавун'")).toBeInTheDocument();
   });
 
-  it("renders each gloss token from a successful translation", () => {
-    render(<Transcript state={{ status: "success", glossSequence: ["I", "WANT", "WATER"] }} />);
+  it("renders the composed Ukrainian sentence and each Ukrainian word chip, never the internal gloss codes", () => {
+    render(
+      <Transcript
+        state={{
+          status: "success",
+          glossSequence: ["I", "WANT", "WATER"],
+          glossLabels: [
+            { text: "Я", isFingerspell: false },
+            { text: "хотіти", isFingerspell: false },
+            { text: "вода", isFingerspell: false },
+          ],
+          composedText: "Я хочу води.",
+        }}
+      />,
+    );
 
-    expect(screen.getByText("I")).toBeInTheDocument();
-    expect(screen.getByText("WANT")).toBeInTheDocument();
-    expect(screen.getByText("WATER")).toBeInTheDocument();
+    expect(screen.getByText("Я хочу води.")).toBeInTheDocument();
+    expect(screen.getByText("Я")).toBeInTheDocument();
+    expect(screen.getByText("хотіти")).toBeInTheDocument();
+    expect(screen.getByText("вода")).toBeInTheDocument();
+    expect(screen.queryByText("WANT")).not.toBeInTheDocument();
+    expect(screen.queryByText("WATER")).not.toBeInTheDocument();
   });
 
   it("groups a fingerspelled word (Phase 16) into one readable chip", () => {
@@ -32,13 +48,36 @@ describe("Transcript", () => {
         state={{
           status: "success",
           glossSequence: ["I", "WANT", "FS_К", "FS_А", "FS_В", "FS_У", "FS_Н"],
+          glossLabels: [
+            { text: "Я", isFingerspell: false },
+            { text: "хотіти", isFingerspell: false },
+            { text: "Кавун", isFingerspell: true },
+          ],
+          composedText: "Я хочу Кавун.",
         }}
       />,
     );
 
-    expect(screen.getByText("I")).toBeInTheDocument();
-    expect(screen.getByText("WANT")).toBeInTheDocument();
+    expect(screen.getByText("Я")).toBeInTheDocument();
+    expect(screen.getByText("хотіти")).toBeInTheDocument();
     expect(screen.getByText("Кавун")).toBeInTheDocument();
     expect(screen.queryByText("FS_К")).not.toBeInTheDocument();
+    expect(screen.queryByText("WANT")).not.toBeInTheDocument();
+  });
+
+  it("shows a fallback note (no bold sentence) when the sequence doesn't compose into a full sentence", () => {
+    render(
+      <Transcript
+        state={{
+          status: "success",
+          glossSequence: ["WATER"],
+          glossLabels: [{ text: "вода", isFingerspell: false }],
+          composedText: null,
+        }}
+      />,
+    );
+
+    expect(screen.getByText("вода")).toBeInTheDocument();
+    expect(screen.getByText(/повного речення для цієї комбінації ще немає/)).toBeInTheDocument();
   });
 });

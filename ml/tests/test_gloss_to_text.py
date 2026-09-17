@@ -4,6 +4,7 @@ from ml.nlp.gloss_to_text import (
     UnknownGlossError,
     UnsupportedPatternError,
     compose_sentence,
+    gloss_display_labels,
 )
 
 
@@ -71,7 +72,9 @@ def test_verb_missing_a_conjugation_for_the_subject_raises_unsupported_pattern(m
     from ml.nlp import gloss_to_text
     from ml.nlp.lexicon import VerbEntry
 
-    incomplete_verb = VerbEntry(conjugation={"2sg": "хочеш"}, governs_case="accusative", past={})
+    incomplete_verb = VerbEntry(
+        infinitive="хотіти", conjugation={"2sg": "хочеш"}, governs_case="accusative", past={}
+    )
     monkeypatch.setitem(gloss_to_text.VERBS, "WANT", incomplete_verb)
 
     with pytest.raises(UnsupportedPatternError, match="1sg"):
@@ -148,6 +151,35 @@ def test_gloss_starting_with_neither_pronoun_nor_noun_is_unsupported():
 def test_gloss_with_trailing_junk_after_a_valid_pattern_is_unsupported():
     with pytest.raises(UnsupportedPatternError):
         compose_sentence(["I", "WANT", "WATER", "TAK"])
+
+
+def test_gloss_display_labels_are_ukrainian_words_not_the_internal_gloss_codes():
+    # The whole point: a UI must never show "I", "WANT", "WATER" -- those
+    # are code identifiers, not Ukrainian.
+    assert gloss_display_labels(["I", "WANT", "WATER"]) == [("Я", False), ("хотіти", False), ("вода", False)]
+
+
+def test_gloss_display_labels_use_the_verbs_infinitive_not_a_conjugated_form():
+    assert gloss_display_labels(["HE", "RIDE"]) == [("Він", False), ("їхати", False)]
+
+
+def test_gloss_display_labels_omit_the_past_tense_marker_entirely():
+    # PAST has no Ukrainian surface form of its own -- see lexicon.py.
+    assert gloss_display_labels(["CAR", "PAST", "RIDE"]) == [("машина", False), ("їхати", False)]
+
+
+def test_gloss_display_labels_include_negation_and_adverbs():
+    assert gloss_display_labels(["I", "NOT", "WANT", "WATER", "TODAY"]) == [
+        ("Я", False),
+        ("не", False),
+        ("хотіти", False),
+        ("вода", False),
+        ("сьогодні", False),
+    ]
+
+
+def test_gloss_display_labels_spell_out_a_fingerspelled_run_as_one_word_and_flag_it():
+    assert gloss_display_labels(["FS_О", "FS_К", "FS_С", "FS_А", "FS_Н", "FS_А"]) == [("Оксана", True)]
 
 
 def test_fingerspelled_glosses_fill_the_object_slot_of_the_svo_pattern():

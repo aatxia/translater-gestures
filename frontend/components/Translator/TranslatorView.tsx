@@ -69,7 +69,15 @@ export function TranslatorView(): React.ReactElement {
     setTranslationState({ status: "loading" });
     try {
       const result = await textToGloss(text);
-      setTranslationState({ status: "success", glossSequence: result.gloss_sequence });
+      setTranslationState({
+        status: "success",
+        glossSequence: result.gloss_sequence,
+        glossLabels: result.gloss_labels.map((label) => ({
+          text: label.text,
+          isFingerspell: label.is_fingerspell,
+        })),
+        composedText: result.composed_text,
+      });
       setAvatarGlossSequence(result.gloss_sequence);
     } catch (err) {
       setTranslationState({

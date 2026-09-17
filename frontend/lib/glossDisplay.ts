@@ -2,8 +2,14 @@
  * Groups a gloss sequence for display: a run of consecutive Phase 16
  * fingerspelling tokens ("FS_<letter>") reads as noise one chip per letter,
  * so it's collapsed into one chip showing the spelled word. Regular glosses
- * are unaffected -- one chip each, same as before Phase 16.
+ * are unaffected -- one chip each, same as before Phase 16. TENSE_PAST_GLOSS
+ * ("PAST") is dropped entirely: it's a pure grammar marker with no
+ * Ukrainian word and no gesture of its own (see ml/nlp/lexicon.py), so a
+ * chip for it would be neither a real word nor a missing animation to
+ * report -- just noise.
  */
+import { glossLabel, TENSE_PAST_GLOSS } from "./glossLabels";
+
 export interface GlossDisplayItem {
   key: string;
   label: string;
@@ -22,12 +28,9 @@ function isFingerspellGloss(gloss: string): boolean {
 }
 
 // Gloss tokens are internal identifiers, not Ukrainian text (e.g. "WATER",
-// "YOU_PL", "DO_POBACHENNYA") -- the underscore is purely a code-naming
-// convention with no meaning for someone reading the UI, so it's rendered
-// as a space here. Cosmetic only: the label is still the same identifier,
-// nothing is translated or guessed.
+// "YOU_PL") -- glossLabel() looks up the real Ukrainian word (lib/glossLabels.ts).
 export function formatGlossLabel(gloss: string): string {
-  return gloss.replace(/_/g, " ");
+  return glossLabel(gloss);
 }
 
 export function groupGlossesForDisplay(sequence: string[]): GlossDisplayItem[] {
@@ -35,6 +38,10 @@ export function groupGlossesForDisplay(sequence: string[]): GlossDisplayItem[] {
   let i = 0;
   while (i < sequence.length) {
     const gloss = sequence[i]!;
+    if (gloss === TENSE_PAST_GLOSS) {
+      i += 1;
+      continue;
+    }
     if (!isFingerspellGloss(gloss)) {
       items.push({
         key: `${gloss}-${i}`,

@@ -62,6 +62,7 @@ class PronounEntry:
 
 @dataclass(frozen=True)
 class VerbEntry:
+    infinitive: str  # dictionary-citation form, e.g. "хотіти" -- used for display labels
     conjugation: dict[str, str]  # person_key -> conjugated surface form
     governs_case: str  # which NounEntry.cases key a direct object takes
     past: dict[str, str]  # "masc" | "fem" | "neut" | "plural" -> past form
@@ -98,6 +99,7 @@ PRONOUNS: dict[str, PronounEntry] = {
 
 VERBS: dict[str, VerbEntry] = {
     "WANT": VerbEntry(
+        infinitive="хотіти",
         conjugation={
             "1sg": "хочу", "2sg": "хочеш", "3sg": "хоче",
             "1pl": "хочемо", "2pl": "хочете", "3pl": "хочуть",
@@ -106,6 +108,7 @@ VERBS: dict[str, VerbEntry] = {
         past={"masc": "хотів", "fem": "хотіла", "neut": "хотіло", "plural": "хотіли"},
     ),
     "LIKE": VerbEntry(
+        infinitive="любити",
         conjugation={
             "1sg": "люблю", "2sg": "любиш", "3sg": "любить",
             "1pl": "любимо", "2pl": "любите", "3pl": "люблять",
@@ -114,6 +117,7 @@ VERBS: dict[str, VerbEntry] = {
         past={"masc": "любив", "fem": "любила", "neut": "любило", "plural": "любили"},
     ),
     "HAVE": VerbEntry(
+        infinitive="мати",
         conjugation={
             "1sg": "маю", "2sg": "маєш", "3sg": "має",
             "1pl": "маємо", "2pl": "маєте", "3pl": "мають",
@@ -122,6 +126,7 @@ VERBS: dict[str, VerbEntry] = {
         past={"masc": "мав", "fem": "мала", "neut": "мало", "plural": "мали"},
     ),
     "KNOW": VerbEntry(
+        infinitive="знати",
         conjugation={
             "1sg": "знаю", "2sg": "знаєш", "3sg": "знає",
             "1pl": "знаємо", "2pl": "знаєте", "3pl": "знають",
@@ -130,6 +135,7 @@ VERBS: dict[str, VerbEntry] = {
         past={"masc": "знав", "fem": "знала", "neut": "знало", "plural": "знали"},
     ),
     "UNDERSTAND": VerbEntry(
+        infinitive="розуміти",
         conjugation={
             "1sg": "розумію", "2sg": "розумієш", "3sg": "розуміє",
             "1pl": "розуміємо", "2pl": "розумієте", "3pl": "розуміють",
@@ -138,6 +144,7 @@ VERBS: dict[str, VerbEntry] = {
         past={"masc": "розумів", "fem": "розуміла", "neut": "розуміло", "plural": "розуміли"},
     ),
     "SEE": VerbEntry(
+        infinitive="бачити",
         conjugation={
             "1sg": "бачу", "2sg": "бачиш", "3sg": "бачить",
             "1pl": "бачимо", "2pl": "бачите", "3pl": "бачать",
@@ -146,6 +153,7 @@ VERBS: dict[str, VerbEntry] = {
         past={"masc": "бачив", "fem": "бачила", "neut": "бачило", "plural": "бачили"},
     ),
     "READ": VerbEntry(
+        infinitive="читати",
         conjugation={
             "1sg": "читаю", "2sg": "читаєш", "3sg": "читає",
             "1pl": "читаємо", "2pl": "читаєте", "3pl": "читають",
@@ -154,6 +162,7 @@ VERBS: dict[str, VerbEntry] = {
         past={"masc": "читав", "fem": "читала", "neut": "читало", "plural": "читали"},
     ),
     "WRITE": VerbEntry(
+        infinitive="писати",
         conjugation={
             "1sg": "пишу", "2sg": "пишеш", "3sg": "пише",
             "1pl": "пишемо", "2pl": "пишете", "3pl": "пишуть",
@@ -162,6 +171,7 @@ VERBS: dict[str, VerbEntry] = {
         past={"masc": "писав", "fem": "писала", "neut": "писало", "plural": "писали"},
     ),
     "EAT": VerbEntry(
+        infinitive="їсти",
         conjugation={
             "1sg": "їм", "2sg": "їси", "3sg": "їсть",
             "1pl": "їмо", "2pl": "їсте", "3pl": "їдять",
@@ -170,6 +180,7 @@ VERBS: dict[str, VerbEntry] = {
         past={"masc": "їв", "fem": "їла", "neut": "їло", "plural": "їли"},
     ),
     "DRINK": VerbEntry(
+        infinitive="пити",
         conjugation={
             "1sg": "п'ю", "2sg": "п'єш", "3sg": "п'є",
             "1pl": "п'ємо", "2pl": "п'єте", "3pl": "п'ють",
@@ -183,6 +194,7 @@ VERBS: dict[str, VerbEntry] = {
     # take if it ever gained an object (none of the current NOUNS pair with
     # them), not a placeholder.
     "GO": VerbEntry(
+        infinitive="іти",
         conjugation={
             "1sg": "іду", "2sg": "ідеш", "3sg": "іде",
             "1pl": "ідемо", "2pl": "ідете", "3pl": "ідуть",
@@ -191,6 +203,7 @@ VERBS: dict[str, VerbEntry] = {
         past={"masc": "йшов", "fem": "йшла", "neut": "йшло", "plural": "йшли"},
     ),
     "WORK": VerbEntry(
+        infinitive="працювати",
         conjugation={
             "1sg": "працюю", "2sg": "працюєш", "3sg": "працює",
             "1pl": "працюємо", "2pl": "працюєте", "3pl": "працюють",
@@ -199,6 +212,7 @@ VERBS: dict[str, VerbEntry] = {
         past={"masc": "працював", "fem": "працювала", "neut": "працювало", "plural": "працювали"},
     ),
     "LIVE": VerbEntry(
+        infinitive="жити",
         conjugation={
             "1sg": "живу", "2sg": "живеш", "3sg": "живе",
             "1pl": "живемо", "2pl": "живете", "3pl": "живуть",
@@ -207,6 +221,7 @@ VERBS: dict[str, VerbEntry] = {
         past={"masc": "жив", "fem": "жила", "neut": "жило", "plural": "жили"},
     ),
     "SLEEP": VerbEntry(
+        infinitive="спати",
         conjugation={
             "1sg": "сплю", "2sg": "спиш", "3sg": "спить",
             "1pl": "спимо", "2pl": "спите", "3pl": "сплять",
@@ -215,6 +230,7 @@ VERBS: dict[str, VerbEntry] = {
         past={"masc": "спав", "fem": "спала", "neut": "спало", "plural": "спали"},
     ),
     "SPEAK": VerbEntry(
+        infinitive="говорити",
         conjugation={
             "1sg": "говорю", "2sg": "говориш", "3sg": "говорить",
             "1pl": "говоримо", "2pl": "говорите", "3pl": "говорять",
@@ -230,6 +246,7 @@ VERBS: dict[str, VerbEntry] = {
     # governs_case here is never actually read, since no [SUBJECT, RIDE,
     # NOUN] pattern is supported.
     "RIDE": VerbEntry(
+        infinitive="їхати",
         conjugation={
             "1sg": "їду", "2sg": "їдеш", "3sg": "їде",
             "1pl": "їдемо", "2pl": "їдете", "3pl": "їдуть",
