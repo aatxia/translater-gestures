@@ -33,6 +33,19 @@ def test_valid_frame_gets_an_honest_ml_not_implemented_error_not_a_fake_predicti
     with client.websocket_connect("/ws") as ws:
         ws.receive_json()  # connection ack
         ws.send_json({"type": "frame", "timestamp": 1, "data": _blank_frame_data_url()})
+
+        # landmarks_status precedes the prediction/error for every processed
+        # frame (Phase: hand-visibility indicator) -- a blank frame has no
+        # hand in it, so this must honestly say so too.
+        status = ws.receive_json()
+        assert status == {
+            "type": "landmarks_status",
+            "left_hand": False,
+            "right_hand": False,
+            "pose": False,
+            "face": False,
+        }
+
         response = ws.receive_json()
         assert response["type"] == "error"
         assert "not implemented" in response["message"].lower()
@@ -59,6 +72,7 @@ def test_invalid_json_returns_error_and_keeps_connection_open():
 
         # connection must still be usable afterwards
         ws.send_json({"type": "frame", "timestamp": 1, "data": _blank_frame_data_url()})
+        ws.receive_json()  # landmarks_status
         follow_up = ws.receive_json()
         assert follow_up["type"] == "error"
 
@@ -86,6 +100,7 @@ def test_second_frame_within_min_interval_is_rate_limited():
         ws.receive_json()
         frame_data = _blank_frame_data_url()
         ws.send_json({"type": "frame", "timestamp": 1, "data": frame_data})
+        ws.receive_json()  # landmarks_status
         first = ws.receive_json()
         assert first["type"] == "error"  # ML-not-ready error
 

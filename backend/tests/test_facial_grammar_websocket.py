@@ -114,6 +114,7 @@ def test_facial_grammar_field_is_none_with_no_face_detected(tmp_path, monkeypatc
         ws.receive_json()
         for i in range(SEQUENCE_LENGTH):
             ws.send_json({"type": "frame", "timestamp": i, "data": frame_data})
+            ws.receive_json()  # landmarks_status
             response = ws.receive_json()
 
     assert response["type"] == "prediction"
@@ -143,6 +144,7 @@ def test_confirmed_gloss_becomes_a_question_when_eyebrows_are_raised(
         ws.receive_json()
         for i in range(SEQUENCE_LENGTH + 10):
             ws.send_json({"type": "frame", "timestamp": i, "data": frame_data})
+            ws.receive_json()  # landmarks_status
             response = ws.receive_json()
             if response["type"] == "final_prediction":
                 final_predictions.append(response)

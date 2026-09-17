@@ -14,13 +14,13 @@ describe("groupGlossesForDisplay", () => {
 
     expect(items).toHaveLength(1);
     expect(items[0]?.isFingerspell).toBe(true);
-    expect(items[0]?.label).toBe("🔤 Оксана");
+    expect(items[0]?.label).toBe("Оксана");
   });
 
   it("groups a fingerspelled run inside a larger sequence without touching the rest", () => {
     const items = groupGlossesForDisplay(["I", "LIKE", "FS_О", "FS_К", "FS_С", "FS_А", "FS_Н", "FS_У"]);
 
-    expect(items.map((item) => item.label)).toEqual(["I", "LIKE", "🔤 Оксану"]);
+    expect(items.map((item) => item.label)).toEqual(["I", "LIKE", "Оксану"]);
     expect(items.map((item) => item.isFingerspell)).toEqual([false, false, true]);
   });
 

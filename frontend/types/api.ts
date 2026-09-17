@@ -35,6 +35,17 @@ export interface PredictionMessage {
   facial_grammar: FacialGrammarMarker;
 }
 
+/** Real per-frame detection (ml/preprocessing/normalization.py's `present`
+ * dict), sent for every processed frame independent of ML readiness --
+ * drives the opt-in "is my hand visible" indicator from frame 1. */
+export interface LandmarksStatusMessage {
+  type: "landmarks_status";
+  left_hand: boolean;
+  right_hand: boolean;
+  pose: boolean;
+  face: boolean;
+}
+
 export interface ErrorMessage {
   type: "error";
   message: string;
@@ -45,7 +56,11 @@ export interface ConnectionMessage {
   status: "ok" | "closed";
 }
 
-export type ServerMessage = PredictionMessage | ErrorMessage | ConnectionMessage;
+export type ServerMessage =
+  | PredictionMessage
+  | LandmarksStatusMessage
+  | ErrorMessage
+  | ConnectionMessage;
 
 // --- REST API types (Phase 14) ---
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { FrameMessage, ServerMessage } from "@/types/api";
+import type { FrameMessage, LandmarksStatusMessage, ServerMessage } from "@/types/api";
 import type { CapturedFrame } from "@/types/camera";
 
 export type WebSocketStatus = "idle" | "connecting" | "open" | "closed" | "error";
@@ -9,6 +9,11 @@ export type WebSocketStatus = "idle" | "connecting" | "open" | "closed" | "error
 interface UseWebSocketResult {
   status: WebSocketStatus;
   lastMessage: ServerMessage | null;
+  /** Most recent landmarks_status, held independently of lastMessage --
+   * every processed frame immediately follows it with a prediction/error
+   * message, so a consumer reading lastMessage alone would see it for a
+   * single render and then lose it. */
+  landmarksStatus: LandmarksStatusMessage | null;
   connect: () => void;
   disconnect: () => void;
   sendFrame: (frame: CapturedFrame) => void;
@@ -29,6 +34,7 @@ export function useWebSocket(): UseWebSocketResult {
   const socketRef = useRef<WebSocket | null>(null);
   const [status, setStatus] = useState<WebSocketStatus>("idle");
   const [lastMessage, setLastMessage] = useState<ServerMessage | null>(null);
+  const [landmarksStatus, setLandmarksStatus] = useState<LandmarksStatusMessage | null>(null);
 
   const connect = useCallback(() => {
     if (socketRef.current && socketRef.current.readyState <= WebSocket.OPEN) {
@@ -67,6 +73,9 @@ export function useWebSocket(): UseWebSocketResult {
         const parsed: unknown = JSON.parse(event.data);
         if (isServerMessage(parsed)) {
           setLastMessage(parsed);
+          if (parsed.type === "landmarks_status") {
+            setLandmarksStatus(parsed);
+          }
         }
       } catch {
         // Malformed message from the server -- ignore rather than crash the UI.
@@ -98,5 +107,5 @@ export function useWebSocket(): UseWebSocketResult {
     };
   }, []);
 
-  return { status, lastMessage, connect, disconnect, sendFrame };
+  return { status, lastMessage, landmarksStatus, connect, disconnect, sendFrame };
 }

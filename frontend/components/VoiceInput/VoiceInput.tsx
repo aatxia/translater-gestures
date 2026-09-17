@@ -1,5 +1,6 @@
 "use client";
 
+import { Mic, Square } from "lucide-react";
 import { useEffect, useRef } from "react";
 import { useSpeechRecognition } from "@/hooks/useSpeechRecognition";
 
@@ -34,11 +35,21 @@ export function VoiceInput({ onTranscript }: VoiceInputProps): React.ReactElemen
         type="button"
         onClick={() => (isListening ? stop() : start())}
         aria-pressed={isListening}
-        className={`rounded-lg px-4 py-2 text-sm font-semibold text-white ${
+        className={`inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold text-white ${
           isListening ? "bg-red-600 hover:bg-red-700" : "bg-brand-600 hover:bg-brand-700"
         }`}
       >
-        {isListening ? "Зупинити" : "🎤 Голос"}
+        {isListening ? (
+          <>
+            <Square className="h-4 w-4" aria-hidden />
+            Зупинити
+          </>
+        ) : (
+          <>
+            <Mic className="h-4 w-4" aria-hidden />
+            Голос
+          </>
+        )}
       </button>
       <span className={`text-xs ${status === "error" ? "text-red-600" : "text-slate-400"}`}>
         {status === "error" ? error?.message : STATUS_LABEL[status]}

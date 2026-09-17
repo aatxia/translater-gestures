@@ -6,11 +6,20 @@ Client -> Server:
 
 Server -> Client:
     {"type": "connection", "status": "ok" | "closed"}
+    {"type": "landmarks_status", "left_hand": true, "right_hand": false,
+     "pose": true, "face": true}
     {"type": "prediction", "text": "...", "gloss": "TAK", "confidence": 0.92,
      "is_final": false, "facial_grammar": "NONE"}
     {"type": "final_prediction", "text": "...", "gloss": "TAK", "confidence": 0.95,
      "is_final": true, "facial_grammar": "EYEBROWS_RAISED"}
     {"type": "error", "message": "..."}
+
+"landmarks_status" (real detection, not a guess -- ml/preprocessing/
+normalization.py's `present` dict) is sent for every frame that reaches
+real landmark extraction, one per frame, *before* whichever of
+prediction/final_prediction/error follows -- independent of gloss
+inference readiness, so the frontend can show a live "is my hand visible"
+indicator (opt-in toggle) from frame 1, not just once a checkpoint exists.
 
 "gloss" (Phase 15) is the raw predicted sign label for this frame -- the
 same value "text" is derived from via Phase 12's gloss->text composition
@@ -47,6 +56,14 @@ class PredictionMessage(BaseModel):
     facial_grammar: str = "NONE"
 
 
+class LandmarksStatusMessage(BaseModel):
+    type: Literal["landmarks_status"] = "landmarks_status"
+    left_hand: bool
+    right_hand: bool
+    pose: bool
+    face: bool
+
+
 class ErrorMessage(BaseModel):
     type: Literal["error"] = "error"
     message: str
@@ -57,7 +74,7 @@ class ConnectionMessage(BaseModel):
     status: Literal["ok", "closed"] = "ok"
 
 
-ServerMessage = PredictionMessage | ErrorMessage | ConnectionMessage
+ServerMessage = PredictionMessage | LandmarksStatusMessage | ErrorMessage | ConnectionMessage
 
 
 class ProtocolError(ValueError):
