@@ -22,7 +22,7 @@ export function TextInput({ value, onChange, onSubmit, disabled = false }: TextI
         value={value}
         onChange={(event) => onChange(event.target.value)}
         placeholder="Введіть текст українською..."
-        className="flex-1 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm text-slate-900 focus:border-brand-500 focus:outline-none"
+        className="min-w-0 flex-1 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm text-slate-900 focus:border-brand-500 focus:outline-none"
       />
       <button
         type="submit"

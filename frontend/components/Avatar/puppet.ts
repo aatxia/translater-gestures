@@ -41,8 +41,8 @@ function buildArm(sign: 1 | -1, material: THREE.Material): { shoulder: THREE.Gro
 
 export function buildPuppet(): Puppet {
   const root = new THREE.Group();
-  const bodyMaterial = new THREE.MeshStandardMaterial({ color: 0x6366f1 });
-  const limbMaterial = new THREE.MeshStandardMaterial({ color: 0x818cf8 });
+  const bodyMaterial = new THREE.MeshStandardMaterial({ color: 0xdc2626 });
+  const limbMaterial = new THREE.MeshStandardMaterial({ color: 0xf87171 });
 
   const torso = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.45, 1.1, 16), bodyMaterial);
   torso.position.y = 0.55;

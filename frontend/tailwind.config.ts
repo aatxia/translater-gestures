@@ -1,4 +1,5 @@
 import type { Config } from "tailwindcss";
+import colors from "tailwindcss/colors";
 
 const config: Config = {
   content: [
@@ -8,12 +9,10 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        brand: {
-          50: "#eef6ff",
-          500: "#2563eb",
-          600: "#1d4ed8",
-          700: "#1e40af",
-        },
+        // Single accent color for the whole app (buttons, links, active
+        // states, focus rings) -- every component reads "brand-*", never a
+        // hardcoded Tailwind color, so re-theming stays a one-line change.
+        brand: colors.red,
       },
     },
   },
