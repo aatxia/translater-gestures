@@ -68,6 +68,19 @@ export interface TextToGlossRequest {
   text: string;
 }
 
+export interface GlossLabel {
+  text: string;
+  is_fingerspell: boolean;
+}
+
 export interface TextToGlossResponse {
   gloss_sequence: string[];
+  /** Ukrainian word/phrase per gloss token -- gloss_sequence's own tokens
+   * (e.g. "WANT", "CAR") are internal English identifiers, never meant to
+   * be shown to a user. */
+  gloss_labels: GlossLabel[];
+  /** Full composed Ukrainian sentence, when the sequence matches a
+   * supported grammatical pattern; null otherwise (gloss_labels still
+   * shows what was understood, word by word). */
+  composed_text: string | null;
 }

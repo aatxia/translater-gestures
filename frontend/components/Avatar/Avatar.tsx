@@ -1,10 +1,11 @@
 "use client";
 
 import { Info, Play, RotateCcw } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { formatGlossLabel, groupGlossesForDisplay } from "@/lib/glossDisplay";
+import { TENSE_PAST_GLOSS } from "@/lib/glossLabels";
 import { GlossPlayer } from "./player";
 import { poseForGloss } from "./poses";
 import { applyRotations, buildPuppet } from "./puppet";
@@ -57,10 +58,19 @@ export function Avatar({ glossSequence }: AvatarProps): React.ReactElement {
     speedRef.current = speed;
   }, [speed]);
 
+  // TENSE_PAST_GLOSS ("PAST") is a pure grammar marker (ml/nlp/lexicon.py)
+  // with no gesture of its own -- feeding it to GlossPlayer would hold a
+  // pointless neutral pose for a full HOLD_SECONDS and misreport it as a
+  // "missing animation", so it's dropped before the player ever sees it.
+  const animatableGlossSequence = useMemo(
+    () => glossSequence.filter((gloss) => gloss !== TENSE_PAST_GLOSS),
+    [glossSequence],
+  );
+
   useEffect(() => {
-    glossSequenceRef.current = glossSequence;
-    playerRef.current.play(glossSequence);
-  }, [glossSequence]);
+    glossSequenceRef.current = animatableGlossSequence;
+    playerRef.current.play(animatableGlossSequence);
+  }, [animatableGlossSequence]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -244,7 +254,7 @@ export function Avatar({ glossSequence }: AvatarProps): React.ReactElement {
         <div className="flex flex-wrap items-center gap-1.5">
           <button
             type="button"
-            onClick={() => playerRef.current.play(glossSequence)}
+            onClick={() => playerRef.current.play(animatableGlossSequence)}
             title="Переглянути всі жести один за одним"
             className="inline-flex items-center gap-1 rounded-full bg-brand-600 px-2.5 py-0.5 text-xs font-medium text-white hover:bg-brand-700"
           >
