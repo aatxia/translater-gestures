@@ -8,6 +8,8 @@ import { formatGlossLabel, groupGlossesForDisplay } from "@/lib/glossDisplay";
 import { GlossPlayer } from "./player";
 import { poseForGloss } from "./poses";
 import { applyRotations, buildPuppet } from "./puppet";
+import { applyRiggedRotations, loadRiggedPuppet, type RiggedPuppet } from "./riggedPuppet";
+import { riggedPoseForGloss, RIG_NEUTRAL_POSE } from "./riggedPoses";
 
 interface AvatarProps {
   /** Confirmed gloss sequence to animate, in order. Empty = idle/neutral. */
@@ -44,16 +46,19 @@ function detectWebglSupport(): boolean {
 export function Avatar({ glossSequence }: AvatarProps): React.ReactElement {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const playerRef = useRef<GlossPlayer>(new GlossPlayer());
+  const glossSequenceRef = useRef<string[]>(glossSequence);
   const speedRef = useRef(1);
   const [webglUnsupported] = useState(() => !detectWebglSupport());
   const [status, setStatus] = useState<PlaybackStatus>(IDLE_STATUS);
   const [speed, setSpeed] = useState(1);
+  const [usingRiggedModel, setUsingRiggedModel] = useState(false);
 
   useEffect(() => {
     speedRef.current = speed;
   }, [speed]);
 
   useEffect(() => {
+    glossSequenceRef.current = glossSequence;
     playerRef.current.play(glossSequence);
   }, [glossSequence]);
 
@@ -81,11 +86,6 @@ export function Avatar({ glossSequence }: AvatarProps): React.ReactElement {
 
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(35, width / height, 0.1, 10);
-    // Puppet now has legs and hair reaching from ~y=0.03 (feet) to ~y=2.43
-    // (hair top) -- the camera targets its vertical center and sits far
-    // enough back for that full ~2.4-unit height to stay in frame.
-    camera.position.set(0, 1.25, 4.6);
-    camera.lookAt(0, 1.2, 0);
 
     // Three-point lighting for contrast: a bright key light casting real
     // shadow-side definition, a dim cool fill so the shadow side isn't pure
@@ -102,17 +102,65 @@ export function Avatar({ glossSequence }: AvatarProps): React.ReactElement {
     rimLight.position.set(0, 2, -3);
     scene.add(rimLight);
 
-    const puppet = buildPuppet();
-    scene.add(puppet.root);
+    const proceduralPuppet = buildPuppet();
+    scene.add(proceduralPuppet.root);
 
     const controls = new OrbitControls(camera, renderer.domElement);
-    controls.target.set(0, 1.2, 0);
     controls.enableDamping = true;
     controls.dampingFactor = 0.08;
     controls.enablePan = false;
-    controls.minDistance = 2.4;
-    controls.maxDistance = 7;
-    controls.update();
+
+    // Puppet now has legs and hair reaching from ~y=0.03 (feet) to ~y=2.43
+    // (hair top) -- the camera targets its vertical center and sits far
+    // enough back for that full ~2.4-unit height to stay in frame.
+    function frameForProceduralPuppet(): void {
+      camera.position.set(0, 1.25, 4.6);
+      controls.target.set(0, 1.2, 0);
+      controls.minDistance = 2.4;
+      controls.maxDistance = 7;
+      camera.lookAt(controls.target);
+      controls.update();
+    }
+
+    // The rigged model (see riggedPuppet.ts) is a smaller, ~1.5-unit-tall
+    // figure with feet at y=0 -- measured from its own bounding box, not
+    // guessed, since it's a completely different asset with its own scale.
+    function frameForRiggedPuppet(): void {
+      camera.position.set(0, 0.9, 3.3);
+      controls.target.set(0, 0.8, 0);
+      controls.minDistance = 1.6;
+      controls.maxDistance = 5;
+      camera.lookAt(controls.target);
+      controls.update();
+    }
+
+    frameForProceduralPuppet();
+
+    let riggedPuppet: RiggedPuppet | null = null;
+    let cancelled = false;
+    loadRiggedPuppet()
+      .then((loaded) => {
+        if (cancelled) {
+          return;
+        }
+        scene.remove(proceduralPuppet.root);
+        scene.add(loaded.root);
+        riggedPuppet = loaded;
+        frameForRiggedPuppet();
+        // A different pose table (riggedPoses.ts) and neutral pose than the
+        // procedural puppet's, but the exact same GlossPlayer sequencing/
+        // transition/wobble logic -- see player.ts's constructor docstring.
+        playerRef.current = new GlossPlayer(RIG_NEUTRAL_POSE, riggedPoseForGloss);
+        playerRef.current.play(glossSequenceRef.current);
+        setUsingRiggedModel(true);
+      })
+      .catch((err: unknown) => {
+        // Honest fallback, same principle as puppet.ts's "no defined pose
+        // -> hold neutral, don't guess": a slow network, a blocked asset,
+        // or an unexpected glTF shape never leaves the avatar blank or
+        // broken, it just keeps the procedural puppet already on screen.
+        console.warn("Rigged avatar model unavailable, staying on the procedural puppet:", err);
+      });
 
     let frameId: number;
     let lastTime = performance.now();
@@ -122,7 +170,11 @@ export function Avatar({ glossSequence }: AvatarProps): React.ReactElement {
       lastTime = now;
 
       const frame = playerRef.current.update(delta * speedRef.current);
-      applyRotations(puppet, frame.rotations);
+      if (riggedPuppet) {
+        applyRiggedRotations(riggedPuppet, frame.rotations);
+      } else {
+        applyRotations(proceduralPuppet, frame.rotations);
+      }
       setStatus({ currentGloss: frame.currentGloss, unanimatedGlosses: frame.unanimatedGlosses });
 
       controls.update();
@@ -132,6 +184,7 @@ export function Avatar({ glossSequence }: AvatarProps): React.ReactElement {
     frameId = requestAnimationFrame(tick);
 
     return () => {
+      cancelled = true;
       cancelAnimationFrame(frameId);
       controls.dispose();
       renderer.dispose();
@@ -163,6 +216,7 @@ export function Avatar({ glossSequence }: AvatarProps): React.ReactElement {
       <canvas ref={canvasRef} className="h-72 w-full rounded-xl bg-slate-800" />
       <p className="text-center text-[11px] text-slate-400">
         Перетягніть, щоб обертати модель — прокрутіть, щоб наблизити
+        {usingRiggedModel && ' · Модель: "Cesium Man" (CC BY 4.0, cesium.com)'}
       </p>
 
       <div className="flex items-center gap-2 text-xs">
@@ -189,6 +243,10 @@ export function Avatar({ glossSequence }: AvatarProps): React.ReactElement {
       {displayItems.length > 0 && (
         <div className="flex flex-wrap gap-1.5">
           {displayItems.map((item) => {
+            // riggedPoses.ts's RIGGED_GLOSS_POSES covers exactly the same
+            // gloss keys as poses.ts's GLOSS_POSES (see its module
+            // docstring), so this check is valid regardless of which
+            // backend is currently active.
             const canReplay = item.tokens.some((token) => poseForGloss(token) !== null);
             return (
               <button
