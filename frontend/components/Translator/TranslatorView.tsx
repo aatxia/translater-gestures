@@ -20,7 +20,7 @@ import type { TranslationState } from "@/types/translation";
 const Avatar = dynamic(() => import("@/components/Avatar").then((mod) => mod.Avatar), {
   ssr: false,
   loading: () => (
-    <div className="flex h-56 items-center justify-center rounded-xl bg-slate-100 text-sm text-slate-400">
+    <div className="flex h-72 items-center justify-center rounded-xl bg-slate-100 text-sm text-slate-400">
       Завантаження 3D-аватара...
     </div>
   ),

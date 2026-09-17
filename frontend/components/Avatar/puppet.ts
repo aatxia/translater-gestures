@@ -1,8 +1,10 @@
 /**
  * Procedural primitive-based humanoid puppet for the placeholder 3D avatar
- * (Phase 15). No rigged/skinned GLTF asset -- just a handful of Three.js
- * primitives (sphere head, cylinder torso/limbs) parented into a joint-pivot
- * `Object3D` hierarchy, so poses.ts's rotations can drive it directly.
+ * (Phase 15, reworked). Still no rigged/skinned GLTF asset (waiting on an
+ * external model file, see PROJECT_STATUS.md) -- but capsule-based limbs,
+ * actual fingered hands, legs, and simple hair/eyes read as a recognizable
+ * figure instead of floating cylinders, parented into the same joint-pivot
+ * `Object3D` hierarchy so poses.ts's rotations still drive it directly.
  *
  * Pure scene-graph construction: builds `THREE.Object3D`s but never touches
  * a canvas/WebGL context, so it's unit-testable without a real GPU (unlike
@@ -20,44 +22,135 @@ export interface Puppet {
   rightElbow: THREE.Object3D;
 }
 
-function buildArm(sign: 1 | -1, material: THREE.Material): { shoulder: THREE.Group; elbow: THREE.Group } {
-  const shoulder = new THREE.Group();
-  shoulder.position.set(sign * 0.45, 1.0, 0);
+interface ArmMaterials {
+  sleeve: THREE.Material;
+  skin: THREE.Material;
+}
 
-  const upperArm = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 0.5, 12), material);
-  upperArm.position.y = -0.25;
+/** A relaxed, slightly curled hand -- four fingers plus a thumb -- rigidly
+ * attached at the wrist (end of the forearm). No separate wrist/finger
+ * joints exist in poses.ts yet, so the hand doesn't animate on its own; it
+ * moves as one piece with the forearm, which is enough to read as a hand
+ * during a shoulder/elbow gesture rather than a bare rod. */
+function buildHand(sign: 1 | -1, skin: THREE.Material): THREE.Group {
+  const hand = new THREE.Group();
+
+  const palm = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.11, 0.04), skin);
+  palm.position.y = -0.07;
+  hand.add(palm);
+
+  const fingerGeometry = new THREE.CapsuleGeometry(0.013, 0.07, 4, 6);
+  for (let i = 0; i < 4; i += 1) {
+    const finger = new THREE.Mesh(fingerGeometry, skin);
+    finger.position.set(-0.033 + i * 0.022, -0.16, 0);
+    finger.rotation.z = (i - 1.5) * 0.05;
+    hand.add(finger);
+  }
+
+  const thumb = new THREE.Mesh(new THREE.CapsuleGeometry(0.014, 0.05, 4, 6), skin);
+  thumb.position.set(sign * 0.065, -0.09, 0.01);
+  thumb.rotation.z = sign * 0.9;
+  hand.add(thumb);
+
+  return hand;
+}
+
+function buildArm(sign: 1 | -1, materials: ArmMaterials): { shoulder: THREE.Group; elbow: THREE.Group } {
+  const shoulder = new THREE.Group();
+  shoulder.position.set(sign * 0.42, 1.02, 0);
+
+  const upperArm = new THREE.Mesh(new THREE.CapsuleGeometry(0.075, 0.34, 4, 10), materials.sleeve);
+  upperArm.position.y = -0.24;
   shoulder.add(upperArm);
 
   const elbow = new THREE.Group();
-  elbow.position.y = -0.5;
+  elbow.position.y = -0.48;
   shoulder.add(elbow);
 
-  const forearm = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.45, 12), material);
-  forearm.position.y = -0.225;
+  const forearm = new THREE.Mesh(new THREE.CapsuleGeometry(0.06, 0.3, 4, 10), materials.skin);
+  forearm.position.y = -0.21;
   elbow.add(forearm);
+
+  const hand = buildHand(sign, materials.skin);
+  hand.position.y = -0.42;
+  elbow.add(hand);
 
   return { shoulder, elbow };
 }
 
+function buildLeg(sign: 1 | -1, pantsMaterial: THREE.Material, shoeMaterial: THREE.Material): THREE.Group {
+  const leg = new THREE.Group();
+  leg.position.set(sign * 0.16, 0.02, 0);
+
+  const upperLeg = new THREE.Mesh(new THREE.CapsuleGeometry(0.1, 0.32, 4, 10), pantsMaterial);
+  upperLeg.position.y = -0.21;
+  leg.add(upperLeg);
+
+  const lowerLeg = new THREE.Mesh(new THREE.CapsuleGeometry(0.08, 0.3, 4, 10), pantsMaterial);
+  lowerLeg.position.y = -0.52;
+  leg.add(lowerLeg);
+
+  const shoe = new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.07, 0.2), shoeMaterial);
+  shoe.position.set(0, -0.71, 0.05);
+  leg.add(shoe);
+
+  return leg;
+}
+
 export function buildPuppet(): Puppet {
   const root = new THREE.Group();
-  const bodyMaterial = new THREE.MeshStandardMaterial({ color: 0xdc2626 });
-  const limbMaterial = new THREE.MeshStandardMaterial({ color: 0xf87171 });
 
-  const torso = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.45, 1.1, 16), bodyMaterial);
-  torso.position.y = 0.55;
+  const jacketMaterial = new THREE.MeshStandardMaterial({ color: 0xdc2626, roughness: 0.65 });
+  const skinMaterial = new THREE.MeshStandardMaterial({ color: 0xffd9b8, roughness: 0.6 });
+  const hairMaterial = new THREE.MeshStandardMaterial({ color: 0x27272a, roughness: 0.5 });
+  const pantsMaterial = new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.7 });
+  const shoeMaterial = new THREE.MeshStandardMaterial({ color: 0x18181b, roughness: 0.5 });
+  const eyeMaterial = new THREE.MeshStandardMaterial({ color: 0x18181b, roughness: 0.3 });
+
+  const legs = new THREE.Group();
+  legs.add(buildLeg(-1, pantsMaterial, shoeMaterial), buildLeg(1, pantsMaterial, shoeMaterial));
+  root.add(legs);
+
+  const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.32, 0.46, 4, 12), jacketMaterial);
+  torso.position.y = 0.68;
   root.add(torso);
+
+  const neck = new THREE.Mesh(new THREE.CapsuleGeometry(0.09, 0.04, 4, 8), skinMaterial);
+  neck.position.y = 1.0;
+  root.add(neck);
 
   const headPivot = new THREE.Group();
   headPivot.position.set(0, 1.1, 0);
-  const headMesh = new THREE.Mesh(new THREE.SphereGeometry(0.28, 16, 16), bodyMaterial);
-  headMesh.position.y = 0.28;
+  const headMesh = new THREE.Mesh(new THREE.SphereGeometry(0.26, 20, 20), skinMaterial);
+  headMesh.position.y = 0.26;
   headPivot.add(headMesh);
+
+  const hair = new THREE.Mesh(
+    new THREE.SphereGeometry(0.275, 20, 20, 0, Math.PI * 2, 0, Math.PI * 0.62),
+    hairMaterial,
+  );
+  hair.position.y = 0.3;
+  headPivot.add(hair);
+
+  const eyeGeometry = new THREE.SphereGeometry(0.022, 8, 8);
+  const leftEye = new THREE.Mesh(eyeGeometry, eyeMaterial);
+  leftEye.position.set(-0.09, 0.27, 0.235);
+  headPivot.add(leftEye);
+  const rightEye = new THREE.Mesh(eyeGeometry, eyeMaterial);
+  rightEye.position.set(0.09, 0.27, 0.235);
+  headPivot.add(rightEye);
+
   root.add(headPivot);
 
-  const left = buildArm(-1, limbMaterial);
-  const right = buildArm(1, limbMaterial);
+  const armMaterials: ArmMaterials = { sleeve: jacketMaterial, skin: skinMaterial };
+  const left = buildArm(-1, armMaterials);
+  const right = buildArm(1, armMaterials);
   root.add(left.shoulder, right.shoulder);
+
+  // Everything above was authored around a y=0 waist (legs hang below it,
+  // reaching roughly y=-0.73 at the shoes) -- shift the whole figure up so
+  // the feet rest near the ground plane instead of floating under it.
+  root.position.y = 0.75;
 
   return {
     root,
