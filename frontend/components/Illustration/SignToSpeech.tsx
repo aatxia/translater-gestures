@@ -73,8 +73,9 @@ export function SignToSpeech(): React.ReactElement {
         <path d="M78 108 q-10 6 -8 16" className="stroke-slate-300" strokeWidth="2.5" strokeLinecap="round" fill="none" />
         <path d="M86 92 q-14 0 -16 12" className="stroke-slate-300" strokeWidth="2.5" strokeLinecap="round" fill="none" />
 
-        {/* other arm, resting */}
+        {/* other arm, resting, with a small fist so it doesn't end in a bare stroke cap */}
         <path d="M220 215 C 245 225, 255 250, 250 278" className="stroke-brand-400" strokeWidth="20" strokeLinecap="round" />
+        <circle cx="250" cy="282" r="11" className="fill-brand-400" />
 
         {/* torso */}
         <path
@@ -83,12 +84,11 @@ export function SignToSpeech(): React.ReactElement {
         />
         <path d="M188 202 L205 230 L222 202 L205 195 Z" className="fill-white" />
 
-        {/* head + hair */}
+        {/* head: hair drawn as a larger circle behind the (smaller, lower)
+            skin circle, so only its top rim shows as a cap -- avoids
+            hand-rolled arc math that rendered lopsided. */}
+        <circle cx="205" cy="142" r="38" className="fill-slate-800" />
         <circle cx="205" cy="150" r="34" className="fill-[#ffd9b8]" />
-        <path
-          d="M171 150 a34 34 0 0 1 68 0 c0 -22 -14 -36 -34 -36 s-34 14 -34 36 Z"
-          className="fill-slate-800"
-        />
         <circle cx="192" cy="152" r="2.5" className="fill-slate-800" />
         <circle cx="218" cy="152" r="2.5" className="fill-slate-800" />
         <path d="M196 166 q9 7 18 0" className="stroke-slate-800" strokeWidth="2.2" strokeLinecap="round" fill="none" />
@@ -97,14 +97,11 @@ export function SignToSpeech(): React.ReactElement {
       {/* small potted plant, bottom right */}
       <g>
         <path d="M362 320 l6 -34 h20 l6 34 Z" className="fill-brand-500" />
-        <path
-          d="M372 286 q-4 -18 -16 -22 q4 16 14 24 M372 286 q4 -22 20 -26 q-2 18 -18 28 M372 286 v-10"
-          className="stroke-slate-800"
-          strokeWidth="2.2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          fill="none"
-        />
+        <g className="fill-brand-100 stroke-slate-800" strokeWidth="2" strokeLinejoin="round">
+          <path d="M372 286 Q358 270 357 252 Q374 262 372 286 Z" />
+          <path d="M372 286 Q386 270 387 252 Q370 262 372 286 Z" />
+          <path d="M372 286 Q367 258 372 238 Q377 258 372 286 Z" />
+        </g>
       </g>
     </svg>
   );
