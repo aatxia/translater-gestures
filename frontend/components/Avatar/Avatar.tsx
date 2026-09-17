@@ -1,6 +1,6 @@
 "use client";
 
-import { Info, RotateCcw } from "lucide-react";
+import { Info, Play, RotateCcw } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
@@ -241,7 +241,16 @@ export function Avatar({ glossSequence }: AvatarProps): React.ReactElement {
       </div>
 
       {displayItems.length > 0 && (
-        <div className="flex flex-wrap gap-1.5">
+        <div className="flex flex-wrap items-center gap-1.5">
+          <button
+            type="button"
+            onClick={() => playerRef.current.play(glossSequence)}
+            title="Переглянути всі жести один за одним"
+            className="inline-flex items-center gap-1 rounded-full bg-brand-600 px-2.5 py-0.5 text-xs font-medium text-white hover:bg-brand-700"
+          >
+            <Play className="h-3 w-3" aria-hidden />
+            Переглянути все
+          </button>
           {displayItems.map((item) => {
             // riggedPoses.ts's RIGGED_GLOSS_POSES covers exactly the same
             // gloss keys as poses.ts's GLOSS_POSES (see its module
