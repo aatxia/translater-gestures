@@ -81,8 +81,11 @@ export function Avatar({ glossSequence }: AvatarProps): React.ReactElement {
 
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(35, width / height, 0.1, 10);
-    camera.position.set(0, 1, 3.2);
-    camera.lookAt(0, 0.7, 0);
+    // Puppet now has legs and hair reaching from ~y=0.03 (feet) to ~y=2.43
+    // (hair top) -- the camera targets its vertical center and sits far
+    // enough back for that full ~2.4-unit height to stay in frame.
+    camera.position.set(0, 1.25, 4.6);
+    camera.lookAt(0, 1.2, 0);
 
     // Three-point lighting for contrast: a bright key light casting real
     // shadow-side definition, a dim cool fill so the shadow side isn't pure
@@ -103,12 +106,12 @@ export function Avatar({ glossSequence }: AvatarProps): React.ReactElement {
     scene.add(puppet.root);
 
     const controls = new OrbitControls(camera, renderer.domElement);
-    controls.target.set(0, 0.7, 0);
+    controls.target.set(0, 1.2, 0);
     controls.enableDamping = true;
     controls.dampingFactor = 0.08;
     controls.enablePan = false;
-    controls.minDistance = 1.8;
-    controls.maxDistance = 5;
+    controls.minDistance = 2.4;
+    controls.maxDistance = 7;
     controls.update();
 
     let frameId: number;
@@ -157,7 +160,7 @@ export function Avatar({ glossSequence }: AvatarProps): React.ReactElement {
         )}
       </div>
 
-      <canvas ref={canvasRef} className="h-56 w-full rounded-xl bg-slate-800" />
+      <canvas ref={canvasRef} className="h-72 w-full rounded-xl bg-slate-800" />
       <p className="text-center text-[11px] text-slate-400">
         Перетягніть, щоб обертати модель — прокрутіть, щоб наблизити
       </p>
