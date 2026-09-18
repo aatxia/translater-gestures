@@ -75,4 +75,28 @@ describe("Camera", () => {
       expect(screen.getByText("Активна")).toBeInTheDocument();
     });
   });
+
+  it("toggles the on-video overlay off and on via its own button, independent of streaming", async () => {
+    const track = { stop: vi.fn() };
+    const getUserMedia = vi.fn().mockResolvedValue({ getTracks: () => [track] });
+    vi.stubGlobal("navigator", { mediaDevices: { getUserMedia } });
+
+    const user = userEvent.setup();
+    const { container } = render(<Camera />);
+
+    await user.click(screen.getByRole("button", { name: "Увімкнути камеру" }));
+    await waitFor(() => expect(screen.getByText("Активна")).toBeInTheDocument());
+
+    const toggle = screen.getByRole("button", { name: "Сховати індикатори на відео" });
+    expect(toggle).toHaveAttribute("aria-pressed", "true");
+    expect(container.querySelector("canvas")).toHaveClass("block");
+
+    await user.click(toggle);
+
+    expect(screen.getByRole("button", { name: "Показати індикатори на відео" })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
+    expect(container.querySelector("canvas")).toHaveClass("hidden");
+  });
 });

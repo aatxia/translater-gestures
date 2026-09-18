@@ -30,6 +30,10 @@ export function Camera({ onFrame, landmarksStatus = null }: CameraProps = {}): R
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const boxRef = useRef<HTMLDivElement>(null);
   const [boxSize, setBoxSize] = useState({ width: 0, height: 0 });
+  // On by default -- it's the main way to see detection actually working --
+  // but drawing a live skeleton over your own face/hands isn't for everyone,
+  // so it's a real, one-click off switch, not just the separate side dots.
+  const [overlayEnabled, setOverlayEnabled] = useState(true);
 
   const isStreaming = status === "streaming";
   const isBusy = status === "requesting_permission";
@@ -66,9 +70,9 @@ export function Camera({ onFrame, landmarksStatus = null }: CameraProps = {}): R
       boxSize.height,
       video.videoWidth,
       video.videoHeight,
-      isStreaming ? landmarksStatus : null,
+      isStreaming && overlayEnabled ? landmarksStatus : null,
     );
-  }, [landmarksStatus, boxSize, isStreaming, videoRef]);
+  }, [landmarksStatus, boxSize, isStreaming, overlayEnabled, videoRef]);
 
   return (
     <div className="flex flex-col gap-3">
@@ -88,8 +92,18 @@ export function Camera({ onFrame, landmarksStatus = null }: CameraProps = {}): R
             see frontend/lib/landmarkOverlay.ts */}
         <canvas
           ref={canvasRef}
-          className={`pointer-events-none absolute inset-0 h-full w-full ${isStreaming ? "block" : "hidden"}`}
+          className={`pointer-events-none absolute inset-0 h-full w-full ${isStreaming && overlayEnabled ? "block" : "hidden"}`}
         />
+        {isStreaming && (
+          <button
+            type="button"
+            onClick={() => setOverlayEnabled((current) => !current)}
+            aria-pressed={overlayEnabled}
+            className="absolute right-2 top-2 rounded-md bg-slate-900/70 px-2 py-1 text-xs font-medium text-white hover:bg-slate-900/90"
+          >
+            {overlayEnabled ? "Сховати індикатори на відео" : "Показати індикатори на відео"}
+          </button>
+        )}
         {!isStreaming && (
           <p className="px-4 text-center text-sm text-slate-400">
             {status === "error" ? error?.message : "Камера не активна"}
