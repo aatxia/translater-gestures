@@ -35,6 +35,11 @@ export interface PredictionMessage {
   facial_grammar: FacialGrammarMarker;
 }
 
+/** A single (x, y) point, image-normalized to [0, 1] in MediaPipe's own
+ * frame space (not the centered/scaled coordinates used for ML features) --
+ * suitable for drawing directly on the video frame. */
+export type LandmarkPoint = [number, number];
+
 /** Real per-frame detection (ml/preprocessing/normalization.py's `present`
  * dict), sent for every processed frame independent of ML readiness --
  * drives the opt-in "is my hand visible" indicator from frame 1. */
@@ -44,6 +49,12 @@ export interface LandmarksStatusMessage {
   right_hand: boolean;
   pose: boolean;
   face: boolean;
+  /** Raw (x, y) points for the overlay (frontend/components/Camera) --
+   * null when that modality wasn't detected this frame. Face is
+   * intentionally omitted (see backend/websocket/protocol.py). */
+  left_hand_points: LandmarkPoint[] | null;
+  right_hand_points: LandmarkPoint[] | null;
+  pose_points: LandmarkPoint[] | null;
 }
 
 export interface ErrorMessage {

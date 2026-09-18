@@ -48,4 +48,31 @@ describe("Camera", () => {
       expect(screen.getByText(/Доступ до камери відхилено/)).toBeInTheDocument();
     });
   });
+
+  it("accepts a landmarksStatus prop (overlay canvas) without crashing, streaming or not", async () => {
+    const track = { stop: vi.fn() };
+    const getUserMedia = vi.fn().mockResolvedValue({ getTracks: () => [track] });
+    vi.stubGlobal("navigator", { mediaDevices: { getUserMedia } });
+
+    const status = {
+      type: "landmarks_status" as const,
+      left_hand: false,
+      right_hand: true,
+      pose: true,
+      face: false,
+      left_hand_points: null,
+      right_hand_points: [[0.4, 0.5]] as [number, number][],
+      pose_points: null,
+    };
+
+    const user = userEvent.setup();
+    const { container } = render(<Camera landmarksStatus={status} />);
+    expect(container.querySelector("canvas")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Увімкнути камеру" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Активна")).toBeInTheDocument();
+    });
+  });
 });

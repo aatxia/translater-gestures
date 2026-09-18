@@ -44,6 +44,9 @@ def test_valid_frame_gets_an_honest_ml_not_implemented_error_not_a_fake_predicti
             "right_hand": False,
             "pose": False,
             "face": False,
+            "left_hand_points": None,
+            "right_hand_points": None,
+            "pose_points": None,
         }
 
         response = ws.receive_json()
