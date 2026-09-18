@@ -26,7 +26,6 @@ from pathlib import Path
 
 import cv2
 import numpy as np
-
 from ml.preprocessing.landmarks import LandmarkExtractor
 from ml.preprocessing.normalization import normalize_hand
 

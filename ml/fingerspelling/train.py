@@ -20,21 +20,27 @@ from pathlib import Path
 
 import numpy as np
 import torch
-from torch import nn
-
 from ml.fingerspelling.model import FingerspellingMLP
 from ml.fingerspelling.split import stratified_split
+from torch import nn
 
 
 def _class_weights(train_labels: np.ndarray, num_classes: int, label_to_index: dict[str, int]) -> torch.Tensor:
-    """Inverse-frequency weights for the loss, so the ~6000-sample classes
-    don't drown out the ~24-sample ones during training -- a standard
-    mitigation for real class imbalance, not a way to hide it (the printed
-    report below still shows the raw per-class counts and accuracy)."""
+    """Inverse-sqrt-frequency weights for the loss, so the ~6000-sample
+    classes don't drown out the ~24-sample ones during training -- a
+    standard mitigation for real class imbalance, not a way to hide it (the
+    printed report below still shows the raw per-class counts and
+    accuracy). Plain inverse frequency (1/count) was tried first and
+    overcorrected badly here: with counts ranging 16-3427 (~200x), it made
+    the single largest class (Ж) so cheap to misclassify in the weighted
+    loss that the model gave up on it almost entirely (1% test accuracy on
+    Ж despite it having the most training data of any class) in exchange
+    for the rare classes. sqrt tempers that ratio to ~14x, which is still a
+    real correction but doesn't sacrifice the majority class to get it."""
     counts = Counter(train_labels.tolist())
     weights = torch.ones(num_classes, dtype=torch.float32)
     for label, index in label_to_index.items():
-        weights[index] = 1.0 / max(counts.get(label, 1), 1)
+        weights[index] = 1.0 / max(counts.get(label, 1), 1) ** 0.5
     return weights / weights.sum() * num_classes
 
 

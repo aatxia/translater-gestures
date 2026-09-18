@@ -20,7 +20,6 @@ from collections import Counter
 from pathlib import Path
 
 import numpy as np
-
 from ml.fingerspelling.dataset import extract_features, scan_image_dataset
 from ml.preprocessing.landmarks import FeatureToggles, LandmarkExtractor
 
