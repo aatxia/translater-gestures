@@ -94,13 +94,18 @@ def test_landmarks_status_reflects_actual_per_modality_detection(monkeypatch, re
         ws.send_json({"type": "frame", "timestamp": 1, "data": frame_data})
         status = ws.receive_json()
 
-    assert status == {
-        "type": "landmarks_status",
-        "left_hand": False,
-        "right_hand": True,
-        "pose": True,
-        "face": False,
-    }
+    assert status["type"] == "landmarks_status"
+    assert status["left_hand"] is False
+    assert status["right_hand"] is True
+    assert status["pose"] is True
+    assert status["face"] is False
+    # Raw (x, y) points for the overlay (frontend/components/Camera), sent
+    # alongside the booleans -- None for the modality that wasn't detected,
+    # a real per-point list (matching MediaPipe's own landmark counts) for
+    # the ones that were.
+    assert status["left_hand_points"] is None
+    assert status["right_hand_points"] is not None and len(status["right_hand_points"]) == 21
+    assert status["pose_points"] is not None and len(status["pose_points"]) == 33
 
 
 def test_sends_buffering_status_then_a_real_prediction_once_window_fills(

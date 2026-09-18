@@ -62,6 +62,18 @@ class LandmarksStatusMessage(BaseModel):
     right_hand: bool
     pose: bool
     face: bool
+    # Raw (x, y) image-normalized coordinates (MediaPipe's own [0, 1] frame
+    # space, before ml/preprocessing/normalization.py's centering/scaling --
+    # that version is for the model, this one is for drawing on the actual
+    # video frame), so the frontend can overlay real detected points on the
+    # camera feed, the way MediaPipe's own demos do -- not just a boolean
+    # "hand visible" dot. None (not an empty list) when that modality
+    # wasn't detected this frame, same honesty convention as the booleans
+    # above. Face is intentionally omitted -- 478 points per frame for a
+    # feature nobody asked to see face landmarks for.
+    left_hand_points: list[tuple[float, float]] | None = None
+    right_hand_points: list[tuple[float, float]] | None = None
+    pose_points: list[tuple[float, float]] | None = None
 
 
 class ErrorMessage(BaseModel):

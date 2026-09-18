@@ -15,7 +15,16 @@ describe("LandmarkIndicator", () => {
     const user = userEvent.setup();
     render(
       <LandmarkIndicator
-        status={{ type: "landmarks_status", left_hand: true, right_hand: false, pose: true, face: false }}
+        status={{
+          type: "landmarks_status",
+          left_hand: true,
+          right_hand: false,
+          pose: true,
+          face: false,
+          left_hand_points: null,
+          right_hand_points: null,
+          pose_points: null,
+        }}
       />,
     );
 

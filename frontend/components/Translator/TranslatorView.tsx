@@ -118,7 +118,7 @@ export function TranslatorView(): React.ReactElement {
           <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">
             Камера
           </h2>
-          <Camera onFrame={sendFrame} />
+          <Camera onFrame={sendFrame} landmarksStatus={landmarksStatus} />
           <div className="mt-3">
             <LandmarkIndicator status={landmarksStatus} />
           </div>

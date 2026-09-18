@@ -1,7 +1,10 @@
 "use client";
 
+import { useEffect, useRef, useState } from "react";
 import { useCamera } from "@/hooks/useCamera";
+import { drawLandmarksOverlay } from "@/lib/landmarkOverlay";
 import type { CapturedFrame } from "@/types/camera";
+import type { LandmarksStatusMessage } from "@/types/api";
 
 const STATUS_LABEL: Record<string, string> = {
   idle: "Не запущено",
@@ -15,17 +18,64 @@ interface CameraProps {
   /** Called at the configured FPS while streaming (see useCamera). Optional --
    * omit for a plain preview-only camera (e.g. standalone demo usage). */
   onFrame?: (frame: CapturedFrame) => void;
+  /** Latest real per-frame detection (backend/websocket/protocol.py's
+   * landmarks_status) -- when given, real detected hand/pose points are
+   * drawn directly on the video, the way MediaPipe's own demos do.
+   * Optional -- omit for a plain preview-only camera. */
+  landmarksStatus?: LandmarksStatusMessage | null;
 }
 
-export function Camera({ onFrame }: CameraProps = {}): React.ReactElement {
+export function Camera({ onFrame, landmarksStatus = null }: CameraProps = {}): React.ReactElement {
   const { videoRef, status, error, config, start, stop } = useCamera({ onFrame });
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const boxRef = useRef<HTMLDivElement>(null);
+  const [boxSize, setBoxSize] = useState({ width: 0, height: 0 });
 
   const isStreaming = status === "streaming";
   const isBusy = status === "requesting_permission";
 
+  useEffect(() => {
+    const box = boxRef.current;
+    if (!box || typeof ResizeObserver === "undefined") return;
+
+    const observer = new ResizeObserver(([entry]) => {
+      if (!entry) return;
+      const { width, height } = entry.contentRect;
+      setBoxSize({ width, height });
+    });
+    observer.observe(box);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const video = videoRef.current;
+    if (!canvas || !video || boxSize.width === 0 || boxSize.height === 0) return;
+
+    const dpr = typeof window === "undefined" ? 1 : window.devicePixelRatio || 1;
+    canvas.width = boxSize.width * dpr;
+    canvas.height = boxSize.height * dpr;
+
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    drawLandmarksOverlay(
+      ctx,
+      boxSize.width,
+      boxSize.height,
+      video.videoWidth,
+      video.videoHeight,
+      isStreaming ? landmarksStatus : null,
+    );
+  }, [landmarksStatus, boxSize, isStreaming, videoRef]);
+
   return (
     <div className="flex flex-col gap-3">
-      <div className="relative flex aspect-video items-center justify-center overflow-hidden rounded-xl bg-slate-900">
+      <div
+        ref={boxRef}
+        className="relative flex aspect-video items-center justify-center overflow-hidden rounded-xl bg-slate-900"
+      >
         {/* Live camera preview -- no captions applicable to a real-time video feed */}
         <video
           ref={videoRef}
@@ -33,6 +83,12 @@ export function Camera({ onFrame }: CameraProps = {}): React.ReactElement {
           playsInline
           muted
           className={`h-full w-full object-cover ${isStreaming ? "block" : "hidden"}`}
+        />
+        {/* Real detected hand/pose points, drawn on top of the video --
+            see frontend/lib/landmarkOverlay.ts */}
+        <canvas
+          ref={canvasRef}
+          className={`pointer-events-none absolute inset-0 h-full w-full ${isStreaming ? "block" : "hidden"}`}
         />
         {!isStreaming && (
           <p className="px-4 text-center text-sm text-slate-400">

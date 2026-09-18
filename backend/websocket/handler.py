@@ -78,6 +78,16 @@ logger = get_logger(__name__)
 # worth lazily loading or caching failure state for.
 translation_service = RuleBasedTranslationService()
 
+def _xy_points(landmarks: object) -> list[tuple[float, float]] | None:
+    """Raw (x, y) pairs for one modality's landmarks (an (N, 3) array), or
+    None if that modality wasn't detected this frame -- see
+    LandmarksStatusMessage's docstring for why this reads the pre-
+    normalization coordinates, not ml/preprocessing/normalization.py's."""
+    if landmarks is None:
+        return None
+    return [(float(x), float(y)) for x, y, _z in landmarks]  # type: ignore[misc]
+
+
 _landmark_extractor: LandmarkExtractor | None = None
 _landmark_extractor_error: str | None = None
 
@@ -213,6 +223,9 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
                     right_hand=normalized.present["right_hand"],
                     pose=normalized.present["pose"],
                     face=normalized.present["face"],
+                    left_hand_points=_xy_points(raw_landmarks.left_hand),
+                    right_hand_points=_xy_points(raw_landmarks.right_hand),
+                    pose_points=_xy_points(raw_landmarks.pose),
                 ).model_dump()
             )
 
