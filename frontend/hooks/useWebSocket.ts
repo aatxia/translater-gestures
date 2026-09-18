@@ -35,6 +35,17 @@ export function useWebSocket(): UseWebSocketResult {
   const [status, setStatus] = useState<WebSocketStatus>("idle");
   const [lastMessage, setLastMessage] = useState<ServerMessage | null>(null);
   const [landmarksStatus, setLandmarksStatus] = useState<LandmarksStatusMessage | null>(null);
+  // Backpressure: the backend processes one frame's real MediaPipe
+  // extraction (+ inference) fully before reading the next message off this
+  // connection -- on a slow machine that easily takes longer than the
+  // capture loop's interval. Without this, sendFrame would keep firing on
+  // its own timer regardless, queuing up frames the server hasn't gotten to
+  // yet; every later landmarks_status/prediction would then describe an
+  // increasingly stale frame, the display drifting further behind the (locally
+  // rendered, always-live) camera preview forever, not just running a bit slow.
+  // Capping this connection to one in-flight frame means a slow backend
+  // instead just shows a lower-but-live indicator rate -- never growing lag.
+  const awaitingFrameResponseRef = useRef(false);
 
   const connect = useCallback(() => {
     if (socketRef.current && socketRef.current.readyState <= WebSocket.OPEN) {
@@ -45,6 +56,7 @@ export function useWebSocket(): UseWebSocketResult {
       return;
     }
 
+    awaitingFrameResponseRef.current = false;
     setStatus("connecting");
     const socket = new WebSocket(WS_URL);
     socketRef.current = socket;
@@ -75,6 +87,12 @@ export function useWebSocket(): UseWebSocketResult {
           setLastMessage(parsed);
           if (parsed.type === "landmarks_status") {
             setLandmarksStatus(parsed);
+          } else if (parsed.type !== "connection") {
+            // prediction / final_prediction / error: the terminal message for
+            // whichever frame is currently in flight (landmarks_status is
+            // always followed by exactly one of these) -- only now is it
+            // safe to let sendFrame release the next one.
+            awaitingFrameResponseRef.current = false;
           }
         }
       } catch {
@@ -92,12 +110,16 @@ export function useWebSocket(): UseWebSocketResult {
   const sendFrame = useCallback((frame: CapturedFrame) => {
     const socket = socketRef.current;
     if (!socket || socket.readyState !== WebSocket.OPEN) return;
+    // Drop (don't queue) this frame if the previous one's response hasn't
+    // arrived yet -- see awaitingFrameResponseRef above.
+    if (awaitingFrameResponseRef.current) return;
 
     const message: FrameMessage = {
       type: "frame",
       timestamp: frame.timestamp,
       data: frame.dataUrl,
     };
+    awaitingFrameResponseRef.current = true;
     socket.send(JSON.stringify(message));
   }, []);
 

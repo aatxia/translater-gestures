@@ -149,6 +149,46 @@ describe("useWebSocket", () => {
     expect(sent).toEqual({ type: "frame", timestamp: 123, data: frame.dataUrl });
   });
 
+  it("drops a new frame while the previous one's response hasn't arrived yet", async () => {
+    const { result } = renderHook(() => useWebSocket());
+    const frame = { dataUrl: "data:image/jpeg;base64,AAA", timestamp: 1, width: 640, height: 480 };
+
+    act(() => result.current.connect());
+    act(() => instances[0]?.simulateOpen());
+
+    act(() => result.current.sendFrame(frame));
+    expect(instances[0]?.sentMessages).toHaveLength(1);
+
+    // Backend hasn't replied to the first frame yet -- a second capture-loop
+    // tick must be dropped, not queued (that's what causes unbounded lag on
+    // a backend slower than the capture rate).
+    act(() => result.current.sendFrame({ ...frame, timestamp: 2 }));
+    expect(instances[0]?.sentMessages).toHaveLength(1);
+
+    // landmarks_status is the interim message for a frame -- still waiting.
+    act(() => {
+      instances[0]?.simulateMessage({
+        type: "landmarks_status",
+        left_hand: false,
+        right_hand: false,
+        pose: false,
+        face: false,
+        left_hand_points: null,
+        right_hand_points: null,
+        pose_points: null,
+      });
+    });
+    act(() => result.current.sendFrame({ ...frame, timestamp: 3 }));
+    expect(instances[0]?.sentMessages).toHaveLength(1);
+
+    // The terminal message for that frame arrives -- now the next frame may send.
+    act(() => {
+      instances[0]?.simulateMessage({ type: "error", message: "Buffering: 1/32" });
+    });
+    act(() => result.current.sendFrame({ ...frame, timestamp: 4 }));
+    expect(instances[0]?.sentMessages).toHaveLength(2);
+  });
+
   it("transitions to 'closed' when disconnect() is called", async () => {
     const { result } = renderHook(() => useWebSocket());
 
