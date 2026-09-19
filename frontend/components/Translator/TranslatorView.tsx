@@ -4,6 +4,7 @@ import { HelpCircle } from "lucide-react";
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useState } from "react";
 import { Camera } from "@/components/Camera";
+import { Fingerspelling } from "@/components/Fingerspelling";
 import { SignToSpeech } from "@/components/Illustration";
 import { LandmarkIndicator } from "@/components/LandmarkIndicator";
 import { TextInput } from "@/components/TextInput";
@@ -42,7 +43,7 @@ const FACIAL_GRAMMAR_LABEL: Partial<Record<string, string>> = {
 };
 
 export function TranslatorView(): React.ReactElement {
-  const { status, lastMessage, landmarksStatus, connect, disconnect, sendFrame } = useWebSocket();
+  const { status, lastMessage, landmarksStatus, letterMessage, connect, disconnect, sendFrame } = useWebSocket();
   const [inputText, setInputText] = useState("");
   const [translationState, setTranslationState] = useState<TranslationState>({ status: "idle" });
   // Avatar (Phase 15) shows exactly the sentence the user just translated
@@ -121,6 +122,9 @@ export function TranslatorView(): React.ReactElement {
           <Camera onFrame={sendFrame} landmarksStatus={landmarksStatus} />
           <div className="mt-3">
             <LandmarkIndicator status={landmarksStatus} />
+          </div>
+          <div className="mt-3">
+            <Fingerspelling letterMessage={letterMessage} />
           </div>
         </section>
 

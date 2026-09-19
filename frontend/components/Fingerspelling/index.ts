@@ -1,0 +1,1 @@
+export { Fingerspelling } from "./Fingerspelling";

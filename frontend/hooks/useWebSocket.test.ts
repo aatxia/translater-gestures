@@ -189,6 +189,76 @@ describe("useWebSocket", () => {
     expect(instances[0]?.sentMessages).toHaveLength(2);
   });
 
+  it("keeps letterMessage sticky the same way as landmarksStatus", async () => {
+    const { result } = renderHook(() => useWebSocket());
+
+    act(() => result.current.connect());
+    act(() => instances[0]?.simulateOpen());
+
+    act(() => {
+      instances[0]?.simulateMessage({
+        type: "letter_prediction",
+        letter: "А",
+        confidence: 0.7,
+        is_final: false,
+      });
+    });
+    await waitFor(() => {
+      expect(result.current.letterMessage?.letter).toBe("А");
+    });
+    expect(result.current.letterMessage?.is_final).toBe(false);
+
+    // The real per-frame terminal message (word-level path) follows --
+    // must not erase the sticky letterMessage.
+    act(() => {
+      instances[0]?.simulateMessage({ type: "error", message: "Buffering: 1/32" });
+    });
+    await waitFor(() => {
+      expect(result.current.lastMessage?.type).toBe("error");
+    });
+    expect(result.current.letterMessage?.letter).toBe("А");
+
+    act(() => {
+      instances[0]?.simulateMessage({
+        type: "letter_confirmed",
+        letter: "Б",
+        confidence: 0.9,
+        is_final: true,
+      });
+    });
+    await waitFor(() => {
+      expect(result.current.letterMessage?.letter).toBe("Б");
+    });
+    expect(result.current.letterMessage?.is_final).toBe(true);
+  });
+
+  it("does not release the next frame on a letter message -- only the true terminal message counts", async () => {
+    const { result } = renderHook(() => useWebSocket());
+    const frame = { dataUrl: "data:image/jpeg;base64,AAA", timestamp: 1, width: 640, height: 480 };
+
+    act(() => result.current.connect());
+    act(() => instances[0]?.simulateOpen());
+    act(() => result.current.sendFrame(frame));
+    expect(instances[0]?.sentMessages).toHaveLength(1);
+
+    act(() => {
+      instances[0]?.simulateMessage({
+        type: "letter_prediction",
+        letter: "А",
+        confidence: 0.7,
+        is_final: false,
+      });
+    });
+    act(() => result.current.sendFrame({ ...frame, timestamp: 2 }));
+    expect(instances[0]?.sentMessages).toHaveLength(1); // still dropped -- word-level terminal message hasn't arrived
+
+    act(() => {
+      instances[0]?.simulateMessage({ type: "error", message: "Buffering: 1/32" });
+    });
+    act(() => result.current.sendFrame({ ...frame, timestamp: 3 }));
+    expect(instances[0]?.sentMessages).toHaveLength(2);
+  });
+
   it("transitions to 'closed' when disconnect() is called", async () => {
     const { result } = renderHook(() => useWebSocket());
 

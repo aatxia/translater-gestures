@@ -63,6 +63,15 @@ class Settings(BaseSettings):
     model_sequence_length: int = 32
     model_device: str = "cpu"
 
+    # --- Fingerspelling classifier (ml/fingerspelling/) -- a separate,
+    # single-frame model from the word-level one above, optional: the
+    # live per-frame letter path is skipped (not an error) when this
+    # checkpoint isn't present, since it's an additive capability. ---
+    fingerspelling_checkpoint_path: str = "ml/fingerspelling/checkpoints/latest.pt"
+    fingerspelling_device: str = "cpu"
+    fingerspelling_stability_frames: int = 8
+    fingerspelling_confidence_threshold: float = 0.6
+
     # --- Feature toggles ---
     features_hands: bool = True
     features_pose: bool = True
@@ -91,6 +100,12 @@ class Settings(BaseSettings):
         from backend/, where a bare relative path would silently resolve to
         the wrong (nonexistent) location. Mirrors mediapipe_models_dir."""
         path = Path(self.model_checkpoint_path)
+        return path if path.is_absolute() else REPO_ROOT / path
+
+    @property
+    def fingerspelling_checkpoint_path_resolved(self) -> Path:
+        """Same repo-root-relative resolution as model_checkpoint_path_resolved."""
+        path = Path(self.fingerspelling_checkpoint_path)
         return path if path.is_absolute() else REPO_ROOT / path
 
 

@@ -20,9 +20,10 @@ from pathlib import Path
 
 import numpy as np
 import torch
+from torch import nn
+
 from ml.fingerspelling.model import FingerspellingMLP
 from ml.fingerspelling.split import stratified_split
-from torch import nn
 
 
 def _class_weights(train_labels: np.ndarray, num_classes: int, label_to_index: dict[str, int]) -> torch.Tensor:

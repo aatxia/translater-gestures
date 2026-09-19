@@ -39,13 +39,22 @@ import json
 import time
 from collections import deque
 
+from app.core.config import get_settings
+from app.core.logging import get_logger
+from app.services.fingerspelling_provider import get_fingerspelling_service
+from app.services.inference_provider import get_inference_service
+from app.services.inference_service import MLNotReadyError
+from app.services.translation_service import RuleBasedTranslationService
 from fastapi import WebSocket, WebSocketDisconnect
+from starlette.websockets import WebSocketState
+
 from ml.features.facial_grammar import BaselineCalibrator, FacialGrammarMarker
 from ml.features.feature_vector import (
     FeatureConfig,
     build_feature_vector,
     feature_vector_size,
 )
+from ml.fingerspelling.dataset import hand_to_feature_vector
 from ml.inference.aggregator import GlossSequenceAggregator
 from ml.preprocessing.landmarks import (
     FeatureToggles,
@@ -54,18 +63,12 @@ from ml.preprocessing.landmarks import (
 )
 from ml.preprocessing.normalization import normalize_frame
 from ml.preprocessing.video_reader import FrameDecodeError, decode_base64_frame
-from starlette.websockets import WebSocketState
-
-from app.core.config import get_settings
-from app.core.logging import get_logger
-from app.services.inference_provider import get_inference_service
-from app.services.inference_service import MLNotReadyError
-from app.services.translation_service import RuleBasedTranslationService
 from websocket.manager import connection_manager
 from websocket.protocol import (
     ConnectionMessage,
     ErrorMessage,
     LandmarksStatusMessage,
+    LetterPredictionMessage,
     PredictionMessage,
     ProtocolError,
     parse_client_message,
@@ -135,6 +138,16 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
     gloss_aggregator = GlossSequenceAggregator(
         stability_frames=settings.ws_gloss_stability_frames,
         confidence_threshold=settings.ws_gloss_confidence_threshold,
+    )
+    # Per-connection: same debounce heuristic, for the separate real
+    # fingerspelling classifier's per-frame letter stream (ml/fingerspelling/).
+    # Reset whenever the frame doesn't have exactly one hand (see below) so
+    # the signer can spell the same letter twice in a row by briefly
+    # releasing the handshape between them, the natural way fingerspelling
+    # transitions between letters.
+    letter_aggregator = GlossSequenceAggregator(
+        stability_frames=settings.fingerspelling_stability_frames,
+        confidence_threshold=settings.fingerspelling_confidence_threshold,
     )
     # Per-connection: calibrates against this signer's own neutral face,
     # then classifies eyebrow position into a non-manual grammar marker
@@ -228,6 +241,34 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
                     pose_points=_xy_points(raw_landmarks.pose),
                 ).model_dump()
             )
+
+            # Real, separately-trained classifier (ml/fingerspelling/, not
+            # the synthetic-only word-level checkpoint below) for single
+            # dactyl letters -- independent of word-level ML readiness, same
+            # as landmarks_status/facial grammar above. Silently absent (no
+            # message at all) when the frame doesn't have exactly one hand,
+            # or when no fingerspelling checkpoint is loaded -- this is an
+            # additive capability, not something that needs its own error.
+            hand_vector, _skip_reason = hand_to_feature_vector(raw_landmarks.left_hand, raw_landmarks.right_hand)
+            if hand_vector is None:
+                letter_aggregator.reset()
+            else:
+                fingerspelling_service = get_fingerspelling_service()
+                if fingerspelling_service.is_ready():
+                    letter_prediction = await asyncio.to_thread(
+                        fingerspelling_service.predict, hand_vector.tolist()
+                    )
+                    letter_confirmed = letter_aggregator.update(
+                        letter_prediction.letter, letter_prediction.confidence
+                    )
+                    await websocket.send_json(
+                        LetterPredictionMessage(
+                            type="letter_confirmed" if letter_confirmed else "letter_prediction",
+                            letter=letter_prediction.letter,
+                            confidence=letter_prediction.confidence,
+                            is_final=letter_confirmed,
+                        ).model_dump()
+                    )
 
             # Calibrates/classifies regardless of ML readiness below -- an
             # honest FacialGrammarMarker.NONE when no face was detected at
