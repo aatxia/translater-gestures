@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { FrameMessage, LandmarksStatusMessage, ServerMessage } from "@/types/api";
+import type { LandmarksStatusMessage, LetterPredictionMessage, FrameMessage, ServerMessage } from "@/types/api";
 import type { CapturedFrame } from "@/types/camera";
 
 export type WebSocketStatus = "idle" | "connecting" | "open" | "closed" | "error";
@@ -14,12 +14,24 @@ interface UseWebSocketResult {
    * message, so a consumer reading lastMessage alone would see it for a
    * single render and then lose it. */
   landmarksStatus: LandmarksStatusMessage | null;
+  /** Most recent letter_prediction/letter_confirmed, held the same way as
+   * landmarksStatus and for the same reason -- the real fingerspelling
+   * classifier (ml/fingerspelling/), separate from lastMessage's word-level
+   * (still synthetic-only) prediction stream. */
+  letterMessage: LetterPredictionMessage | null;
   connect: () => void;
   disconnect: () => void;
   sendFrame: (frame: CapturedFrame) => void;
 }
 
 const WS_URL = process.env.NEXT_PUBLIC_WS_URL ?? "ws://localhost:8000/ws";
+
+// The terminal message for whichever frame is currently in flight -- see
+// awaitingFrameResponseRef below. landmarks_status and letter_prediction/
+// letter_confirmed are interim (each frame gets 0-1 of the latter, always
+// followed by exactly one of these), connection is sent once at connect
+// and isn't tied to a frame at all.
+const TERMINAL_MESSAGE_TYPES = new Set(["prediction", "final_prediction", "error"]);
 
 function isServerMessage(value: unknown): value is ServerMessage {
   return (
@@ -35,6 +47,7 @@ export function useWebSocket(): UseWebSocketResult {
   const [status, setStatus] = useState<WebSocketStatus>("idle");
   const [lastMessage, setLastMessage] = useState<ServerMessage | null>(null);
   const [landmarksStatus, setLandmarksStatus] = useState<LandmarksStatusMessage | null>(null);
+  const [letterMessage, setLetterMessage] = useState<LetterPredictionMessage | null>(null);
   // Backpressure: the backend processes one frame's real MediaPipe
   // extraction (+ inference) fully before reading the next message off this
   // connection -- on a slow machine that easily takes longer than the
@@ -87,11 +100,10 @@ export function useWebSocket(): UseWebSocketResult {
           setLastMessage(parsed);
           if (parsed.type === "landmarks_status") {
             setLandmarksStatus(parsed);
-          } else if (parsed.type !== "connection") {
-            // prediction / final_prediction / error: the terminal message for
-            // whichever frame is currently in flight (landmarks_status is
-            // always followed by exactly one of these) -- only now is it
-            // safe to let sendFrame release the next one.
+          } else if (parsed.type === "letter_prediction" || parsed.type === "letter_confirmed") {
+            setLetterMessage(parsed);
+          } else if (TERMINAL_MESSAGE_TYPES.has(parsed.type)) {
+            // Only now is it safe to let sendFrame release the next frame.
             awaitingFrameResponseRef.current = false;
           }
         }
@@ -129,5 +141,5 @@ export function useWebSocket(): UseWebSocketResult {
     };
   }, []);
 
-  return { status, lastMessage, landmarksStatus, connect, disconnect, sendFrame };
+  return { status, lastMessage, landmarksStatus, letterMessage, connect, disconnect, sendFrame };
 }

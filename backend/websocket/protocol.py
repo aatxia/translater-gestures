@@ -12,6 +12,8 @@ Server -> Client:
      "is_final": false, "facial_grammar": "NONE"}
     {"type": "final_prediction", "text": "...", "gloss": "TAK", "confidence": 0.95,
      "is_final": true, "facial_grammar": "EYEBROWS_RAISED"}
+    {"type": "letter_prediction", "letter": "А", "confidence": 0.81, "is_final": false}
+    {"type": "letter_confirmed", "letter": "А", "confidence": 0.81, "is_final": true}
     {"type": "error", "message": "..."}
 
 "landmarks_status" (real detection, not a guess -- ml/preprocessing/
@@ -33,6 +35,17 @@ plays a gloss once its final_prediction confirms it, never an interim guess.
 baseline calibrator. "NONE" also covers "no face detected" and "still
 calibrating"; the client can't tell those apart from this field alone, but
 none of them should be treated as a detected marker either way.
+
+"letter_prediction"/"letter_confirmed" are a SEPARATE real classifier
+(ml/fingerspelling/, trained on real photos -- not the synthetic-only
+word-level checkpoint "prediction"/"final_prediction" come from) for
+single dactyl letters, not whole signs. Sent only when exactly one hand
+is detected this frame AND that checkpoint is loaded -- silently absent
+otherwise (never an error; this is an additive capability, same honesty
+convention as landmarks_status' per-modality optionality). Confirmation
+uses the same stability-debounce heuristic as gloss confirmation
+(ml/inference/aggregator.py's GlossSequenceAggregator), just on letters
+instead of whole-sign glosses.
 """
 from __future__ import annotations
 
@@ -76,6 +89,13 @@ class LandmarksStatusMessage(BaseModel):
     pose_points: list[tuple[float, float]] | None = None
 
 
+class LetterPredictionMessage(BaseModel):
+    type: Literal["letter_prediction", "letter_confirmed"] = "letter_prediction"
+    letter: str
+    confidence: float
+    is_final: bool = False
+
+
 class ErrorMessage(BaseModel):
     type: Literal["error"] = "error"
     message: str
@@ -86,7 +106,9 @@ class ConnectionMessage(BaseModel):
     status: Literal["ok", "closed"] = "ok"
 
 
-ServerMessage = PredictionMessage | LandmarksStatusMessage | ErrorMessage | ConnectionMessage
+ServerMessage = (
+    PredictionMessage | LandmarksStatusMessage | LetterPredictionMessage | ErrorMessage | ConnectionMessage
+)
 
 
 class ProtocolError(ValueError):

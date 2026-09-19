@@ -26,6 +26,7 @@ from pathlib import Path
 
 import cv2
 import numpy as np
+
 from ml.preprocessing.landmarks import LandmarkExtractor
 from ml.preprocessing.normalization import normalize_hand
 
@@ -67,24 +68,59 @@ class ExtractionResult:
     right_hand_count: int = 0
 
 
+def hand_to_feature_vector(
+    left_hand: np.ndarray | None, right_hand: np.ndarray | None
+) -> tuple[np.ndarray | None, str | None]:
+    """Turns raw (un-normalized) single-frame hand landmarks -- the same
+    `FrameLandmarks.left_hand`/`.right_hand` the live WebSocket handler
+    already extracts every frame for the overlay (backend/websocket/
+    handler.py) -- into the exact 63-dim feature vector this classifier
+    was trained on. Shared by build_dataset.py's offline photo extraction
+    and the live per-frame path (backend/app/services/fingerspelling_
+    service.py) so training and serving can never silently drift apart.
+
+    Returns (vector, None) on success, or (None, reason) when the frame
+    doesn't have exactly one hand -- the caller decides what to do with
+    "no hand" vs "both hands" (log it for a static photo, just skip this
+    frame silently for a live video stream), this function only reports
+    it honestly rather than guessing.
+
+    A left-hand detection has its x-coordinate mirrored before
+    normalization, so a left-hand and a right-hand frame of the same
+    handshape land in the same feature space (handshape identity doesn't
+    depend on which physical hand performs it, just its mirror image) --
+    a deliberate, documented design choice, not something MediaPipe does
+    on its own.
+    """
+    has_left = left_hand is not None
+    has_right = right_hand is not None
+
+    if has_left and has_right:
+        return None, "both hands detected, ambiguous for a single-handshape photo"
+    if not has_left and not has_right:
+        return None, "no hand detected"
+
+    if has_left:
+        hand = left_hand.copy()
+        hand[:, 0] *= -1.0  # mirror x so left- and right-hand frames share one feature space
+    else:
+        hand = right_hand
+
+    normalized = normalize_hand(hand)
+    return normalized.flatten().astype(np.float32), None
+
+
 def extract_features(samples: list[ImageSample], extractor: LandmarkExtractor) -> ExtractionResult:
     """Runs the real MediaPipe hand detector on every sample image and
-    normalizes the single detected hand (wrist-centered, MCP-scaled -- same
-    convention as the video pipeline's per-frame hands, ml/preprocessing/
-    normalization.py's normalize_hand()).
+    turns the single detected hand into a feature vector via
+    hand_to_feature_vector() -- see its docstring for the normalization/
+    mirroring convention.
 
     A photo with no detected hand, or with BOTH hands detected (these are
     meant to be single-handshape photos; two hands means something in the
     frame is ambiguous), is skipped and recorded -- never silently
     zero-filled or guessed, unlike the video pipeline where a missing hand
     is a legitimate "not signing right now" frame.
-
-    A left-hand detection has its x-coordinate mirrored before
-    normalization, so a left-hand and a right-hand photo of the same
-    handshape land in the same feature space (handshape identity doesn't
-    depend on which physical hand performs it, just its mirror image) --
-    a deliberate, documented design choice, not something MediaPipe or the
-    dataset does on its own.
     """
     features: list[np.ndarray] = []
     labels: list[str] = []
@@ -99,28 +135,17 @@ def extract_features(samples: list[ImageSample], extractor: LandmarkExtractor) -
             continue
 
         result = extractor.extract(image_bgr)
-        has_left = result.left_hand is not None
-        has_right = result.right_hand is not None
-
-        if has_left and has_right:
-            skipped.append(
-                (sample.image_path, "both hands detected, ambiguous for a single-handshape photo")
-            )
-            continue
-        if not has_left and not has_right:
-            skipped.append((sample.image_path, "no hand detected"))
+        vector, skip_reason = hand_to_feature_vector(result.left_hand, result.right_hand)
+        if vector is None:
+            skipped.append((sample.image_path, skip_reason))
             continue
 
-        if has_left:
-            hand = result.left_hand.copy()
-            hand[:, 0] *= -1.0  # mirror x so left- and right-hand photos share one feature space
+        if result.left_hand is not None:
             left_count += 1
         else:
-            hand = result.right_hand
             right_count += 1
 
-        normalized = normalize_hand(hand)
-        features.append(normalized.flatten().astype(np.float32))
+        features.append(vector)
         labels.append(sample.label)
 
     return ExtractionResult(

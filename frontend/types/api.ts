@@ -57,6 +57,18 @@ export interface LandmarksStatusMessage {
   pose_points: LandmarkPoint[] | null;
 }
 
+/** A single dactyl letter from the SEPARATE real fingerspelling classifier
+ * (ml/fingerspelling/, trained on real photos -- not the synthetic-only
+ * word-level checkpoint PredictionMessage comes from). Sent only when
+ * exactly one hand is detected and that checkpoint is loaded -- silently
+ * absent otherwise, same honesty convention as landmarks_status. */
+export interface LetterPredictionMessage {
+  type: "letter_prediction" | "letter_confirmed";
+  letter: string;
+  confidence: number;
+  is_final: boolean;
+}
+
 export interface ErrorMessage {
   type: "error";
   message: string;
@@ -70,6 +82,7 @@ export interface ConnectionMessage {
 export type ServerMessage =
   | PredictionMessage
   | LandmarksStatusMessage
+  | LetterPredictionMessage
   | ErrorMessage
   | ConnectionMessage;
 
